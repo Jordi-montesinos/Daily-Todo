@@ -44,6 +44,7 @@ const WeeklyTaskOrganizer = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const inputRefs = useRef({});
   const fileInputRef = useRef(null);
+  const rowRefs = useRef([]);
 
   const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
   const columnLabels = ["Delegated Tasks","Weekly Objectives","Monday","Tuesday","Wednesday","Thursday","Friday"];
@@ -171,6 +172,22 @@ const WeeklyTaskOrganizer = () => {
   useEffect(()=>{ localStorage.setItem("weekly-task-organizer",JSON.stringify(weeks)); },[weeks]);
   useEffect(()=>lucide.createIcons(),[]);
 
+  // Auto-resize rows
+  useEffect(()=>{
+    weeks.forEach((week)=>{
+      week.tasks.forEach((_,rowIndex)=>{
+        if(!rowRefs.current[rowIndex]) return;
+        let maxHeight = 0;
+        rowRefs.current[rowIndex].forEach(cell=>{
+          if(cell) maxHeight = Math.max(maxHeight, cell.scrollHeight);
+        });
+        rowRefs.current[rowIndex].forEach(cell=>{
+          if(cell) cell.style.height = maxHeight + "px";
+        });
+      });
+    });
+  },[weeks]);
+
   return (
     <div className="p-6 max-w-[1800px] mx-auto">
       <div className="flex justify-between items-center mb-6">
@@ -207,45 +224,16 @@ const WeeklyTaskOrganizer = () => {
                   <tr key={rowIndex}>
                     {columns.map((col,colIndex)=>{
                       const style = getCellStyle(col,rowIndex);
+                      if(!rowRefs.current[rowIndex]) rowRefs.current[rowIndex] = [];
                       return (
-                        <td key={col} className={`border border-gray-300 p-1`} draggable
-                            onDragStart={(e)=>handleDragStart(e,week.id,rowIndex,col)}
-                            onDragOver={(e)=>e.preventDefault()}
-                            onDrop={(e)=>handleDrop(e,week.id,rowIndex,col)}>
+                        <td
+                          key={col}
+                          draggable
+                          onDragStart={(e)=>handleDragStart(e,week.id,rowIndex,col)}
+                          onDragOver={(e)=>e.preventDefault()}
+                          onDrop={(e)=>handleDrop(e,week.id,rowIndex,col)}
+                          ref={el=>rowRefs.current[rowIndex][colIndex]=el}
+                          style={{ backgroundColor: style.bg, color: style.text==="text-white"?"white":"black" }}
+                        >
                           <div className="flex items-start gap-1">
-                            <i data-lucide="grip-vertical" className={`w-3 h-3 mt-0.5 ${style.text}`}></i>
-                            <input type="checkbox" checked={task[col].completed} 
-                              onChange={(e)=>updateTask(week.id,rowIndex,col,"completed",e.target.checked)}
-                              className="w-3.5 h-3.5 mt-0.5"/>
-                            <input type="number" min="1" value={task[col].ranking} 
-                              onChange={(e)=>updateTask(week.id,rowIndex,col,"ranking",parseInt(e.target.value))}
-                              className="w-8 text-xs text-center border-0 outline-none"
-                              style={{backgroundColor: style.bg, color: style.text==="text-white"?"white":"black"}}/>
-                            <textarea value={task[col].text} 
-                              onChange={(e)=>updateTask(week.id,rowIndex,col,"text",e.target.value)}
-                              onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)}
-                              ref={el=>inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el}
-                              className="flex-1 text-xs border-0 outline-none resize-none overflow-hidden"
-                              style={{minHeight:"20px", whiteSpace:"pre-wrap"}}
-                              placeholder="Task..."
-                              onInput={e=>{e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px";}}/>
-                          </div>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<WeeklyTaskOrganizer />);
-</script>
-</body>
-</html>
+                            <i data-lucide="grip-vertical" className="w-3 h-3 mt-0.
