@@ -36,11 +36,7 @@ const WeeklyTaskOrganizer = () => {
     }))
   });
 
-  const [weeks, setWeeks] = useState(() => {
-    const saved = localStorage.getItem("weekly-task-organizer");
-    return saved ? JSON.parse(saved) : [defaultWeek()];
-  });
-
+  const [weeks, setWeeks] = useState(() => [defaultWeek()]);
   const [draggedItem, setDraggedItem] = useState(null);
   const inputRefs = useRef({});
   const fileInputRef = useRef(null);
@@ -169,9 +165,8 @@ const WeeklyTaskOrganizer = () => {
     }; reader.readAsText(file);
   };
 
-  useEffect(()=>{ localStorage.setItem("weekly-task-organizer",JSON.stringify(weeks)); },[weeks]);
   useEffect(()=>lucide.createIcons(),[]);
-
+  
   // Auto-resize rows
   useEffect(()=>{
     weeks.forEach((week)=>{
@@ -236,4 +231,27 @@ const WeeklyTaskOrganizer = () => {
                           style={{ backgroundColor: style.bg, color: style.text==="text-white"?"white":"black" }}
                         >
                           <div className="flex items-start gap-1">
-                            <i data-lucide="grip-vertical" className="w-3 h-3 mt-0.
+                            <i data-lucide="grip-vertical" className="w-3 h-3 mt-0.5" style={{color: style.text==="text-white"?"white":"black"}}></i>
+                            <input type="checkbox" checked={task[col].completed} onChange={(e)=>updateTask(week.id,rowIndex,col,"completed",e.target.checked)} className="w-3.5 h-3.5 mt-0.5"/>
+                            <input type="number" min="1" value={task[col].ranking} onChange={(e)=>updateTask(week.id,rowIndex,col,"ranking",parseInt(e.target.value))} className="w-8 text-xs text-center border-0 outline-none" style={{backgroundColor: style.bg, color: style.text==="text-white"?"white":"black"}}/>
+                            <textarea value={task[col].text} onChange={(e)=>updateTask(week.id,rowIndex,col,"text",e.target.value)} onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)} ref={el=>inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el} className="flex-1 text-xs border-0 outline-none resize-none overflow-hidden" style={{minHeight:"20px",whiteSpace:"pre-wrap",backgroundColor: style.bg, color: style.text==="text-white"?"white":"black"}} placeholder="Task..." onInput={(e)=>{ e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px";}}/>
+                          </div>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<WeeklyTaskOrganizer />);
+</script>
+</body>
+</html>
