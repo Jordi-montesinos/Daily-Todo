@@ -19,6 +19,15 @@
   <style>
     body { margin: 0; }
     table td, table th { vertical-align: top; }
+    /* hide default number input spinners */
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -85,11 +94,10 @@ function WeeklyTaskOrganizer() {
   const [draggedItem, setDraggedItem] = useState(null);
   const inputRefs = useRef({});
   const fileInputRef = useRef(null);
-  const rowRefs = useRef({}); // { weekId: [ [td,..], [..], ... ] }
-  const [copiedKeys, setCopiedKeys] = useState(()=> new Set()); // mark summary tasks that were copied
+  const rowRefs = useRef({});
+  const [copiedKeys, setCopiedKeys] = useState(()=> new Set());
 
   const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
-  const columnLabels = ["Delegated Tasks","Weekly Objectives","Monday","Tuesday","Wednesday","Thursday","Friday"];
 
   /* cell colors */
   function getWeeklyObjectivesColor(i){
@@ -156,10 +164,6 @@ function WeeklyTaskOrganizer() {
   }
 
   /* Drag & drop */
-  function handleDragStart(e, weekId, rowIndex, col){
-    setDraggedItem({ weekId, rowIndex, col });
-    e.dataTransfer.effectAllowed = 'move';
-  }
   function handleDrop(e, weekId, targetRow, col){
     e.preventDefault();
     if(!draggedItem || draggedItem.weekId !== weekId || draggedItem.col !== col){ setDraggedItem(null); return; }
@@ -202,13 +206,12 @@ function WeeklyTaskOrganizer() {
     else if(e.key === 'Tab' && e.shiftKey){ e.preventDefault(); focusCell(weekId, row, col-1); }
   }
 
-  /* add / delete weeks (carry over open in first two columns) */
+  /* add / delete weeks */
   function addNewWeek(){
     const prev = weeks[0];
     const nowYear = new Date().getFullYear();
     const nextNum = prev && typeof prev.weekNumber === 'number' ? prev.weekNumber + 1 : currentWeek;
     const newWeek = { id: Date.now(), weekNumber: nextNum, year: nowYear, tasks: makeEmptyTasks() };
-
     if(prev){
       const openDel = prev.tasks.filter(t => t.delegatedTasks.text.trim() && !t.delegatedTasks.completed);
       const openObj = prev.tasks.filter(t => t.weeklyObjectives.text.trim() && !t.weeklyObjectives.completed);
@@ -248,123 +251,13 @@ function WeeklyTaskOrganizer() {
     try { localStorage.setItem('weekly-task-organizer', JSON.stringify(weeks)); } catch {}
   }, [weeks]);
 
-  /* render lucide icons */
-  useEffect(()=> lucide.createIcons());
-
-  /* auto-resize rows per week */
-  useEffect(()=>{
-    weeks.forEach(wk => {
-      const byRow = rowRefs.current[wk.id];
-      if(!byRow) return;
-      byRow.forEach((cells) => {
-        if(!cells) return;
-        let max = 0;
-        cells.forEach(c => { if(c) max = Math.max(max, c.scrollHeight); });
-        cells.forEach(c => { if(c) c.style.height = (max || 20) + 'px'; });
-      });
-    });
-  }, [weeks]);
-
-  function ensureRowRefs(weekId, rowIndex){
-    if(!rowRefs.current[weekId]) rowRefs.current[weekId] = [];
-    if(!rowRefs.current[weekId][rowIndex]) rowRefs.current[weekId][rowIndex] = [];
-  }
-
-  /* today detection for highlight */
+  /* today detection */
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
 
-  /* ---------- Summary tab data ---------- */
-  const [summaryFilter, setSummaryFilter] = useState('All'); // All | Delegated | Objectives | Days
-  const summaryRows = useMemo(() => {
-    const rows = [];
-    const mapColName = {
-      delegatedTasks: 'Delegated',
-      weeklyObjectives: 'Objectives',
-      monday: 'Monday',
-      tuesday: 'Tuesday',
-      wednesday: 'Wednesday',
-      thursday: 'Thursday',
-      friday: 'Friday'
-    };
-    weeks.slice().reverse().forEach(w => {
-      columns.forEach(col => {
-        w.tasks.forEach((t, idx) => {
-          const cell = t[col];
-          if(cell.text.trim() && !cell.completed){
-            rows.push({
-              key: `${w.id}-${col}-${idx}`,
-              weekId: w.id,
-              weekNumber: w.weekNumber,
-              year: w.year,
-              col,
-              colLabel: mapColName[col],
-              text: cell.text
-            });
-          }
-        });
-      });
-    });
-    // filter
-    return rows.filter(r => {
-      if(summaryFilter === 'All') return true;
-      if(summaryFilter === 'Delegated') return r.col === 'delegatedTasks';
-      if(summaryFilter === 'Objectives') return r.col === 'weeklyObjectives';
-      if(summaryFilter === 'Days') return ['monday','tuesday','wednesday','thursday','friday'].includes(r.col);
-      return true;
-    });
-  }, [weeks, summaryFilter]);
-
-  function addAllToNextWeekFromSummary(){
-    if(summaryRows.length === 0) return;
-    // Find current "latest" week (weeks[0]) and determine next week number/year
-    const latest = weeks[0];
-    const nowYear = new Date().getFullYear();
-    const nextNum = latest && typeof latest.weekNumber === 'number' ? latest.weekNumber + 1 : currentWeek;
-    let nextWeek = weeks.find(w => w.weekNumber === nextNum && w.year === nowYear);
-
-    // create if missing
-    if(!nextWeek){
-      nextWeek = { id: Date.now(), weekNumber: nextNum, year: nowYear, tasks: makeEmptyTasks() };
-      setWeeks(prev => [nextWeek, ...prev]);
-      // Need to continue after state set — but we can stage copy after setTimeout to ensure state applied
-      setTimeout(()=> doCopyTo(nextWeek.id), 0);
-    } else {
-      doCopyTo(nextWeek.id);
-    }
-  }
-
-  function doCopyTo(nextWeekId){
-    setWeeks(prev => prev.map(w => {
-      if(w.id !== nextWeekId) return w;
-      const tasks = [...w.tasks];
-      // fill Weekly Objectives from the bottom up (rows 15 -> 0)
-      let writeIndex = 15;
-      summaryRows.forEach(row => {
-        if(writeIndex < 0) return;
-        tasks[writeIndex].weeklyObjectives = {
-          text: row.text,
-          completed: false,
-          ranking: writeIndex + 1
-        };
-        writeIndex--;
-      });
-      return { ...w, tasks };
-    }));
-    // mark copied in summary
-    setCopiedKeys(prev => {
-      const next = new Set(prev);
-      summaryRows.forEach(r => next.add(r.key));
-      return next;
-    });
-  }
-
-  /* ---------- render ---------- */
   return (
     <div className="p-1 bg-white min-h-screen">
-      {/* Full-width white frame with 4px white border (this wrapper is the border) */}
       <div className="bg-white w-full">
-        {/* Tabs (modern buttons) */}
         <div className="flex items-center gap-2 px-2 py-2 border-b border-gray-200">
           <button
             onClick={()=>setActiveTab('organizer')}
@@ -386,238 +279,106 @@ function WeeklyTaskOrganizer() {
           >
             Monthly Summary
           </button>
-
           <div className="ml-auto flex gap-2">
-            <button onClick={saveToFile} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded">
-              <i data-lucide="save" className="w-4 h-4"></i> Save
-            </button>
-            <button onClick={()=>fileInputRef.current?.click()} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded">
-              <i data-lucide="upload" className="w-4 h-4"></i> Load
-            </button>
+            <button onClick={saveToFile} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded">Save</button>
+            <button onClick={()=>fileInputRef.current?.click()} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded">Load</button>
             <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={loadFromFile} />
             {activeTab==='organizer' && (
-              <button onClick={addNewWeek} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">
-                <i data-lucide="plus" className="w-4 h-4"></i> Add Week
-              </button>
+              <button onClick={addNewWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Add Week</button>
             )}
           </div>
         </div>
 
-        {activeTab==='organizer' ? (
-          <div className="w-full">
-            {weeks.map((week, wIdx) => {
-              const year = week.year || currentYear;
-              const wkNum = Number(week.weekNumber) || currentWeek;
-              const monday = getDateOfISOWeek(wkNum, year);
-              const dates = [
-                monday,
-                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 1),
-                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 2),
-                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 3),
-                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 4)
-              ];
+        {activeTab==='organizer' && weeks.map((week) => {
+          const year = week.year || currentYear;
+          const wkNum = Number(week.weekNumber) || currentWeek;
+          const monday = getDateOfISOWeek(wkNum, year);
+          const dates = [
+            monday,
+            new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 1),
+            new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 2),
+            new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 3),
+            new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 4)
+          ];
 
-              // find today column index for this week (Mon..Fri maps to columns index 2..6)
-              let todayColIndex = -1;
-              dates.forEach((d,i) => {
-                const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-                if(key === todayKey) todayColIndex = i + 2;
-              });
-
-              return (
-                <div key={week.id} className="w-full">
-                  {/* Week header: centered, compact, inline week number editor */}
-                  <div className="flex items-center justify-between px-3 py-2">
-                    <div className="mx-auto text-center">
-                      <span className="text-sm text-gray-600 mr-2">Week</span>
-                      <input
-                        value={week.weekNumber}
-                        onChange={(e)=> updateWeekNumber(week.id, parseInt(e.target.value) || 0)}
-                        className="w-20 text-lg font-semibold bg-transparent border-b border-gray-300 focus:outline-none text-gray-800 text-center"
-                        title="Click to edit week number"
-                      />
-                      <span className="text-sm text-gray-600 ml-2">/ Delegated Tasks</span>
-                    </div>
-                    <div>
-                      {weeks.length > 1 && (
-                        <button onClick={()=>deleteWeek(week.id)} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm">
-                          <i data-lucide="trash-2" className="w-4 h-4"></i> Delete
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Table */}
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr>
-                          {columnLabels.map((label, idx) => {
-                            // centered headers + today highlight
-                            let thStyle = { background: '#374151', color: '#fff', padding: '10px', textAlign: 'center', fontSize: '13px' };
-                            if(idx >= 2 && idx <= 6 && (idx === todayColIndex)) {
-                              thStyle = { ...thStyle, background: '#3b82f6', boxShadow: 'inset 0 0 0 2px rgba(59,130,246,0.12)', borderLeft: '3px solid #2563eb', borderRight: '3px solid #2563eb' };
-                            }
-                            const isDay = idx >= 2 && idx <= 6;
-                            const dateText = isDay ? ` (${formatDayShort(dates[idx-2])})` : '';
-
-                            return (
-                              <th key={label} style={thStyle}>
-                                <div className="flex items-center justify-center gap-2">
-                                  <span>{label}{dateText}</span>
-                                </div>
-                              </th>
-                            );
-                          })}
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {week.tasks.map((task, rowIndex) => (
-                          <tr key={rowIndex}>
-                            {columns.map((col, colIndex) => {
-                              const style = getCellStyle(col, rowIndex);
-                              // ensure refs store
-                              if(!rowRefs.current[week.id]) rowRefs.current[week.id] = [];
-                              if(!rowRefs.current[week.id][rowIndex]) rowRefs.current[week.id][rowIndex] = [];
-                              const isTodayCol = (colIndex >=2 && colIndex<=6 && colIndex === todayColIndex);
-                              const leftBorder = colIndex === 0 ? '0' : '1px solid rgba(0,0,0,0.06)';
-                              const cellBorderLeft = isTodayCol ? '3px solid #2563eb' : leftBorder;
-                              const cellBorderRight = isTodayCol ? '3px solid #2563eb' : '0';
-
-                              return (
-                                <td
-                                  key={col}
-                                  draggable
-                                  onDragStart={(e) => setDraggedItem({ weekId: week.id, rowIndex, col })}
-                                  onDragOver={(e) => e.preventDefault()}
-                                  onDrop={(e) => handleDrop(e, week.id, rowIndex, col)}
-                                  ref={el => { rowRefs.current[week.id][rowIndex][colIndex] = el; }}
-                                  style={{
-                                    backgroundColor: style.bg,
-                                    color: style.text === 'white' ? '#fff' : '#000',
-                                    padding: '6px',
-                                    borderLeft: cellBorderLeft,
-                                    borderRight: cellBorderRight,
-                                    verticalAlign: 'top'
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', gap: 8 }}>
-                                    {/* narrow left stack: ranking above checkbox */}
-                                    <div style={{ minWidth: 44, display:'flex', flexDirection:'column', alignItems:'flex-start', gap:4 }}>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        value={task[col].ranking}
-                                        onChange={(e) => updateTask(week.id, rowIndex, col, 'ranking', parseInt(e.target.value) || 1)}
-                                        className="text-xs"
-                                        style={{ width: 36, textAlign:'center', background: style.bg, color: style.text === 'white' ? '#fff' : '#000', border: 'none', outline:'none' }}
-                                      />
-                                      <input
-                                        type="checkbox"
-                                        checked={task[col].completed}
-                                        onChange={(e) => updateTask(week.id, rowIndex, col, 'completed', e.target.checked)}
-                                        style={{ width: 16, height: 16, marginTop: 2 }}
-                                      />
-                                    </div>
-                                    {/* big textarea area */}
-                                    <div style={{ flex:1 }}>
-                                      <textarea
-                                        value={task[col].text}
-                                        onChange={(e) => updateTask(week.id, rowIndex, col, 'text', e.target.value)}
-                                        onKeyDown={(e) => handleKeyDown(e, week.id, rowIndex, colIndex)}
-                                        ref={el => { inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`] = el; }}
-                                        placeholder="Task..."
-                                        style={{
-                                          width: '100%',
-                                          minHeight: 20,
-                                          resize: 'none',
-                                          overflow: 'hidden',
-                                          background: style.bg,
-                                          color: style.text === 'white' ? '#fff' : '#000',
-                                          border: 'none',
-                                          outline: 'none',
-                                          fontSize: 12,
-                                          lineHeight: '1.2rem'
-                                        }}
-                                        onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
-                                      />
-                                    </div>
-                                  </div>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          /* ---------- SUMMARY TAB ---------- */
-          <div className="w-full p-3">
-            <div className="flex items-center gap-3 mb-3">
-              <label className="text-sm text-gray-600">Filter:</label>
-              <select
-                value={summaryFilter}
-                onChange={(e)=>setSummaryFilter(e.target.value)}
-                className="border border-gray-300 rounded px-2 py-1 text-sm"
-              >
-                <option>All</option>
-                <option>Delegated</option>
-                <option>Objectives</option>
-                <option>Days</option>
-              </select>
-
-              <button
-                onClick={addAllToNextWeekFromSummary}
-                className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded"
-                title="Add all open tasks listed below to the next week's Weekly Objectives (creates it if needed). Tasks will fill from the bottom."
-              >
-                <i data-lucide="chevron-right-square" className="w-4 h-4"></i>
-                Add All to Next Week
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full" style={{ borderCollapse:'collapse' }}>
-                <thead>
-                  <tr className="bg-gray-700 text-white text-sm">
-                    <th className="p-2 text-center">Week</th>
-                    <th className="p-2 text-center">Year</th>
-                    <th className="p-2 text-center">Column</th>
-                    <th className="p-2 text-center">Task</th>
-                    <th className="p-2 text-center">Copied</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summaryRows.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" className="p-4 text-center text-gray-500">No open tasks 🎉</td>
-                    </tr>
-                  ) : summaryRows.map(row => (
-                    <tr key={row.key} className="border-b border-gray-200">
-                      <td className="p-2 text-center">{row.weekNumber}</td>
-                      <td className="p-2 text-center">{row.year}</td>
-                      <td className="p-2 text-center">{row.colLabel}</td>
-                      <td className="p-2">{row.text}</td>
-                      <td className="p-2 text-center">{copiedKeys.has(row.key) ? '✓' : ''}</td>
-                    </tr>
+          return (
+            <table key={week.id} className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className="bg-gray-700 text-white text-center p-2">
+                    Week{" "}
+                    <input
+                      value={week.weekNumber}
+                      onChange={(e)=> updateWeekNumber(week.id, parseInt(e.target.value) || 0)}
+                      className="w-14 text-lg font-semibold bg-transparent border-b border-gray-300 focus:outline-none text-white text-center"
+                    />{" "}
+                    / Delegated Tasks
+                  </th>
+                  <th className="bg-gray-700 text-white text-center p-2">Weekly Objectives</th>
+                  {["Monday","Tuesday","Wednesday","Thursday","Friday"].map((day,i)=>(
+                    <th key={day} className="bg-gray-700 text-white text-center p-2">
+                      {day} ({formatDayShort(dates[i])})
+                    </th>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                </tr>
+              </thead>
+              <tbody>
+                {week.tasks.map((task,rowIndex)=>(
+                  <tr key={rowIndex}>
+                    {columns.map((col,colIndex)=>{
+                      const style = getCellStyle(col,rowIndex);
+                      return (
+                        <td
+                          key={col}
+                          draggable
+                          onDragStart={(e)=>setDraggedItem({weekId:week.id,rowIndex,col})}
+                          onDragOver={(e)=>e.preventDefault()}
+                          onDrop={(e)=>handleDrop(e,week.id,rowIndex,col)}
+                          style={{backgroundColor:style.bg,color:style.text==='white'?'#fff':'#000',padding:'6px',borderLeft:'1px solid rgba(0,0,0,0.06)'}}
+                        >
+                          <div style={{ display:'flex', gap:8 }}>
+                            <div style={{ minWidth:44, display:'flex', flexDirection:'column', alignItems:'flex-start', gap:4 }}>
+                              <input
+                                type="number"
+                                min="1"
+                                value={task[col].ranking}
+                                onChange={(e)=>updateTask(week.id,rowIndex,col,'ranking',parseInt(e.target.value)||1)}
+                                className="text-xs"
+                                style={{ width:36, textAlign:'center', background:style.bg, color:style.text==='white'?'#fff':'#000', border:'none', outline:'none' }}
+                              />
+                              <input
+                                type="checkbox"
+                                checked={task[col].completed}
+                                onChange={(e)=>updateTask(week.id,rowIndex,col,'completed',e.target.checked)}
+                                style={{ width:16, height:16, marginTop:2 }}
+                              />
+                            </div>
+                            <div style={{flex:1}}>
+                              <textarea
+                                value={task[col].text}
+                                onChange={(e)=>updateTask(week.id,rowIndex,col,'text',e.target.value)}
+                                onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)}
+                                ref={el=>{inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el;}}
+                                placeholder="Task..."
+                                style={{width:'100%',resize:'none',overflow:'hidden',background:style.bg,color:style.text==='white'?'#fff':'#000',border:'none',outline:'none',fontSize:12,lineHeight:'1.2rem'}}
+                                onInput={(e)=>{e.target.style.height='auto';e.target.style.height=e.target.scrollHeight+'px';}}
+                              />
+                            </div>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/* ---------- boot ---------- */
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<WeeklyTaskOrganizer />);
 </script>
