@@ -46,13 +46,13 @@ const WeeklyTaskOrganizer = () => {
   const columnLabels = ["Delegated Tasks","Weekly Objectives","Monday","Tuesday","Wednesday","Thursday","Friday"];
 
   const getWeeklyObjectivesColor = (i) => {
-    if(i<=3) return { bg:"#dc2626", text:"text-white" }; // red
-    if(i<=7) return { bg:"#f97316", text:"text-white" }; // orange
-    if(i<=11) return { bg:"#facc15", text:"text-black" }; // yellow
-    return { bg:"#fde68a", text:"text-black" }; // light yellow
+    if(i<=3) return { bg:"#dc2626", text:"text-white" };
+    if(i<=7) return { bg:"#f97316", text:"text-white" };
+    if(i<=11) return { bg:"#facc15", text:"text-black" };
+    return { bg:"#fde68a", text:"text-black" };
   };
   const getDayColumnColor = (i) => {
-    if(i===0) return { bg:"#dc2626", text:"text-white" }; 
+    if(i===0) return { bg:"#dc2626", text:"text-white" };
     if(i<=3) return { bg:"#fcd34d", text:"text-black" };
     if(i>=14) return { bg:"#eff6ff", text:"text-black" };
     return { bg:"#ffffff", text:"text-black" };
@@ -73,19 +73,14 @@ const WeeklyTaskOrganizer = () => {
 
   const sortColumnByCategory = (tasks,col)=>{
     const newTasks = [...tasks];
-    const categories = [
-      getCategoryRange(col,0),
-      getCategoryRange(col,4),
-      getCategoryRange(col,8),
-      getCategoryRange(col,12)
-    ];
-    categories.forEach(([start,end])=>{
-      const catTasks = [];
-      for(let i=start;i<=end;i++) catTasks.push({task:newTasks[i][col]});
-      const incomplete = catTasks.filter(t=>!t.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
-      const completed = catTasks.filter(t=>t.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
-      const sorted = [...incomplete,...completed];
-      sorted.forEach((item,idx)=>{ newTasks[start+idx] = {...newTasks[start+idx], [col]: item.task}; });
+    const ranges = [[0,3],[4,7],[8,11],[12,15]];
+    ranges.forEach(([start,end])=>{
+      const segment = [];
+      for(let i=start;i<=end;i++) segment.push({task:newTasks[i][col]});
+      const incomplete = segment.filter(t=>!t.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
+      const complete = segment.filter(t=>t.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
+      const ordered = [...incomplete,...complete];
+      ordered.forEach((item,idx)=>{ newTasks[start+idx] = {...newTasks[start+idx],[col]:item.task}; });
     });
     return newTasks;
   };
@@ -93,121 +88,105 @@ const WeeklyTaskOrganizer = () => {
   const updateTask = (weekId,rowIndex,col,field,value)=>{
     setWeeks(prev=>prev.map(week=>{
       if(week.id!==weekId) return week;
-      let newTasks = [...week.tasks];
-      newTasks[rowIndex] = {...newTasks[rowIndex], [col]: {...newTasks[rowIndex][col], [field]: value }};
-      newTasks = sortColumnByCategory(newTasks,col);
-      return {...week, tasks:newTasks};
+      let newTasks=[...week.tasks];
+      newTasks[rowIndex]={...newTasks[rowIndex],[col]:{...newTasks[rowIndex][col],[field]:value}};
+      newTasks=sortColumnByCategory(newTasks,col);
+      return {...week,tasks:newTasks};
     }));
   };
 
-  const handleDragStart = (e, weekId, rowIndex, column) => {
-    setDraggedItem({ weekId,rowIndex,column });
-    e.dataTransfer.effectAllowed = "move";
+  const handleDragStart=(e,weekId,rowIndex,column)=>{
+    setDraggedItem({weekId,rowIndex,column});
+    e.dataTransfer.effectAllowed="move";
   };
-  const handleDrop = (e, weekId, targetRowIndex, column)=>{
+  const handleDrop=(e,weekId,targetRow,column)=>{
     e.preventDefault();
     if(!draggedItem || draggedItem.weekId!==weekId || draggedItem.column!==column) return;
     setWeeks(prev=>prev.map(week=>{
       if(week.id!==weekId) return week;
-      let tasks = [...week.tasks];
-      const sourceTask = tasks[draggedItem.rowIndex][column];
-      const targetTask = tasks[targetRowIndex][column];
-      tasks[draggedItem.rowIndex][column] = {...targetTask, ranking: draggedItem.rowIndex+1};
-      tasks[targetRowIndex][column] = {...sourceTask, ranking: targetRowIndex+1};
-      tasks = sortColumnByCategory(tasks,column);
-      return {...week, tasks};
+      const tasks=[...week.tasks];
+      const temp=tasks[draggedItem.rowIndex][column];
+      tasks[draggedItem.rowIndex][column]=tasks[targetRow][column];
+      tasks[targetRow][column]=temp;
+      return {...week,tasks:sortColumnByCategory(tasks,column)};
     }));
     setDraggedItem(null);
   };
 
-  const handleKeyDown = (e, weekId,row,col)=>{
-    if(e.key==="Enter" && !e.shiftKey) { e.preventDefault(); focusCell(weekId,row+1,col);}
-    else if(e.key==="Enter" && e.shiftKey){ e.preventDefault(); focusCell(weekId,row-1,col);}
-    else if(e.key==="Tab" && !e.shiftKey){ e.preventDefault(); focusCell(weekId,row,col+1);}
-    else if(e.key==="Tab" && e.shiftKey){ e.preventDefault(); focusCell(weekId,row,col-1);}
+  const handleKeyDown=(e,weekId,row,col)=>{
+    if(e.key==="Enter" && !e.shiftKey){e.preventDefault();focusCell(weekId,row+1,col);}
+    else if(e.key==="Enter" && e.shiftKey){e.preventDefault();focusCell(weekId,row-1,col);}
+    else if(e.key==="Tab" && !e.shiftKey){e.preventDefault();focusCell(weekId,row,col+1);}
+    else if(e.key==="Tab" && e.shiftKey){e.preventDefault();focusCell(weekId,row,col-1);}
   };
-  const focusCell = (weekId,row,col)=>{
+  const focusCell=(weekId,row,col)=>{
     if(row<0||col<0||col>=columns.length||row>=16) return;
-    const ref = inputRefs.current[`${weekId}-${row}-${col}`];
+    const ref=inputRefs.current[`${weekId}-${row}-${col}`];
     if(ref) ref.focus();
   };
 
-  const addNewWeek = ()=>{
-    const lastWeek = weeks[0];
-    const newTasks = Array(16).fill(null).map((_,i)=>({
-      delegatedTasks: { text:"", completed:false, ranking:i+1 },
-      weeklyObjectives: { text:"", completed:false, ranking:i+1 },
-      monday: { text:"", completed:false, ranking:i+1 },
-      tuesday: { text:"", completed:false, ranking:i+1 },
-      wednesday: { text:"", completed:false, ranking:i+1 },
-      thursday: { text:"", completed:false, ranking:i+1 },
-      friday: { text:"", completed:false, ranking:i+1 },
+  const addNewWeek=()=>{
+    const last=weeks[0];
+    const newTasks=Array(16).fill(null).map((_,i)=>({
+      delegatedTasks:{text:"",completed:false,ranking:i+1},
+      weeklyObjectives:{text:"",completed:false,ranking:i+1},
+      monday:{text:"",completed:false,ranking:i+1},
+      tuesday:{text:"",completed:false,ranking:i+1},
+      wednesday:{text:"",completed:false,ranking:i+1},
+      thursday:{text:"",completed:false,ranking:i+1},
+      friday:{text:"",completed:false,ranking:i+1},
     }));
-    const openDelegated = lastWeek.tasks.filter(t=>!t.delegatedTasks.completed && t.delegatedTasks.text.trim());
-    const openObjectives = lastWeek.tasks.filter(t=>!t.weeklyObjectives.completed && t.weeklyObjectives.text.trim());
-    openDelegated.forEach((t,i)=>{ if(i<16) newTasks[i].delegatedTasks={...t.delegatedTasks, completed:false};});
-    openObjectives.forEach((t,i)=>{ if(i<16) newTasks[i].weeklyObjectives={...t.weeklyObjectives, completed:false};});
-    setWeeks([{id:Date.now(), tasks:newTasks},...weeks]);
+    const openDel=last.tasks.filter(t=>!t.delegatedTasks.completed && t.delegatedTasks.text.trim());
+    const openObj=last.tasks.filter(t=>!t.weeklyObjectives.completed && t.weeklyObjectives.text.trim());
+    openDel.forEach((t,i)=>{if(i<16)newTasks[i].delegatedTasks={...t.delegatedTasks,completed:false};});
+    openObj.forEach((t,i)=>{if(i<16)newTasks[i].weeklyObjectives={...t.weeklyObjectives,completed:false};});
+    setWeeks([{id:Date.now(),tasks:newTasks},...weeks]);
   };
-  const deleteWeek = (weekId)=>{ if(weeks.length>1) setWeeks(weeks.filter(w=>w.id!==weekId));};
+
+  const deleteWeek=(id)=>{if(weeks.length>1)setWeeks(weeks.filter(w=>w.id!==id));};
 
   const saveToFile=()=>{
-    const blob = new Blob([JSON.stringify(weeks,null,2)],{type:"application/json"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-    a.download=`weekly-organizer-${new Date().toISOString().split("T")[0]}.json`; a.click(); URL.revokeObjectURL(a.href);
+    const blob=new Blob([JSON.stringify(weeks,null,2)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+    a.download=`weekly-organizer-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();URL.revokeObjectURL(a.href);
   };
   const loadFromFile=(e)=>{
-    const file=e.target.files[0]; if(!file) return;
-    const reader = new FileReader();
-    reader.onload=ev=>{
-      try{ const data = JSON.parse(ev.target.result); setWeeks(data);}
-      catch{ alert("Invalid file"); }
-    }; reader.readAsText(file);
+    const file=e.target.files[0];if(!file)return;
+    const r=new FileReader();
+    r.onload=ev=>{try{setWeeks(JSON.parse(ev.target.result));}catch{alert("Invalid file");}};
+    r.readAsText(file);
   };
 
   useEffect(()=>lucide.createIcons(),[]);
-  
-  // Auto-resize rows
   useEffect(()=>{
-    weeks.forEach((week)=>{
-      week.tasks.forEach((_,rowIndex)=>{
-        if(!rowRefs.current[rowIndex]) return;
-        let maxHeight = 0;
-        rowRefs.current[rowIndex].forEach(cell=>{
-          if(cell) maxHeight = Math.max(maxHeight, cell.scrollHeight);
-        });
-        rowRefs.current[rowIndex].forEach(cell=>{
-          if(cell) cell.style.height = maxHeight + "px";
-        });
+    weeks.forEach(week=>{
+      week.tasks.forEach((_,row)=>{
+        if(!rowRefs.current[row])return;
+        let max=0;
+        rowRefs.current[row].forEach(cell=>{if(cell)max=Math.max(max,cell.scrollHeight);});
+        rowRefs.current[row].forEach(cell=>{if(cell)cell.style.height=max+"px";});
       });
     });
   },[weeks]);
 
-  return (
+  return(
     <div className="p-6 max-w-[1800px] mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Weekly Task Organizer</h1>
         <div className="flex gap-3">
-          <button onClick={saveToFile} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
-            <i data-lucide="save" className="w-4 h-4"></i> Save
-          </button>
-          <button onClick={()=>fileInputRef.current?.click()} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg">
-            <i data-lucide="upload" className="w-4 h-4"></i> Load
-          </button>
+          <button onClick={saveToFile} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"><i data-lucide="save" className="w-4 h-4"></i>Save</button>
+          <button onClick={()=>fileInputRef.current?.click()} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg"><i data-lucide="upload" className="w-4 h-4"></i>Load</button>
           <input ref={fileInputRef} type="file" accept=".json" onChange={loadFromFile} className="hidden"/>
-          <button onClick={addNewWeek} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
-            <i data-lucide="plus" className="w-4 h-4"></i> Add Week
-          </button>
+          <button onClick={addNewWeek} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"><i data-lucide="plus" className="w-4 h-4"></i>Add Week</button>
         </div>
       </div>
 
       {weeks.map((week,index)=>(
-        <div key={week.id} className="mb-8 bg-white rounded-lg shadow p-6">
-          <div className="flex justify-between items-center mb-4">
+        <div key={week.id} className="bg-white rounded-lg shadow pt-2 pb-2 px-6">
+          <div className="flex justify-between items-center mb-2">
             <h2 className="text-xl font-semibold text-gray-700">Week {weeks.length-index}</h2>
-            {weeks.length>1 && <button onClick={()=>deleteWeek(week.id)} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm">
-              <i data-lucide="trash-2" className="w-4 h-4"></i> Delete
-            </button>}
+            {weeks.length>1&&<button onClick={()=>deleteWeek(week.id)} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm"><i data-lucide="trash-2" className="w-4 h-4"></i>Delete</button>}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -218,26 +197,37 @@ const WeeklyTaskOrganizer = () => {
                 {week.tasks.map((task,rowIndex)=>(
                   <tr key={rowIndex}>
                     {columns.map((col,colIndex)=>{
-                      const style = getCellStyle(col,rowIndex);
-                      if(!rowRefs.current[rowIndex]) rowRefs.current[rowIndex] = [];
-                      return (
-                        <td
-                          key={col}
+                      const style=getCellStyle(col,rowIndex);
+                      if(!rowRefs.current[rowIndex])rowRefs.current[rowIndex]=[];
+                      return(
+                        <td key={col}
                           draggable
-                          onDragStart={(e)=>handleDragStart(e,week.id,rowIndex,col)}
-                          onDragOver={(e)=>e.preventDefault()}
-                          onDrop={(e)=>handleDrop(e,week.id,rowIndex,col)}
+                          onDragStart={e=>handleDragStart(e,week.id,rowIndex,col)}
+                          onDragOver={e=>e.preventDefault()}
+                          onDrop={e=>handleDrop(e,week.id,rowIndex,col)}
                           ref={el=>rowRefs.current[rowIndex][colIndex]=el}
-                          style={{ backgroundColor: style.bg, color: style.text==="text-white"?"white":"black" }}
+                          style={{backgroundColor:style.bg,color:style.text==="text-white"?"white":"black"}}
                         >
                           <div className="flex items-start gap-1">
-                            <i data-lucide="grip-vertical" className="w-3 h-3 mt-0.5" style={{color: style.text==="text-white"?"white":"black"}}></i>
-                            <input type="checkbox" checked={task[col].completed} onChange={(e)=>updateTask(week.id,rowIndex,col,"completed",e.target.checked)} className="w-3.5 h-3.5 mt-0.5"/>
-                            <input type="number" min="1" value={task[col].ranking} onChange={(e)=>updateTask(week.id,rowIndex,col,"ranking",parseInt(e.target.value))} className="w-8 text-xs text-center border-0 outline-none" style={{backgroundColor: style.bg, color: style.text==="text-white"?"white":"black"}}/>
-                            <textarea value={task[col].text} onChange={(e)=>updateTask(week.id,rowIndex,col,"text",e.target.value)} onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)} ref={el=>inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el} className="flex-1 text-xs border-0 outline-none resize-none overflow-hidden" style={{minHeight:"20px",whiteSpace:"pre-wrap",backgroundColor: style.bg, color: style.text==="text-white"?"white":"black"}} placeholder="Task..." onInput={(e)=>{ e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px";}}/>
+                            <i data-lucide="grip-vertical" className="w-3 h-3 mt-0.5" style={{color:style.text==="text-white"?"white":"black"}}></i>
+                            <input type="checkbox" checked={task[col].completed}
+                              onChange={e=>updateTask(week.id,rowIndex,col,"completed",e.target.checked)}
+                              className="w-3.5 h-3.5 mt-0.5"/>
+                            <input type="number" min="1" value={task[col].ranking}
+                              onChange={e=>updateTask(week.id,rowIndex,col,"ranking",parseInt(e.target.value))}
+                              className="w-8 text-xs text-center border-0 outline-none"
+                              style={{backgroundColor:style.bg,color:style.text==="text-white"?"white":"black"}}/>
+                            <textarea value={task[col].text}
+                              onChange={e=>updateTask(week.id,rowIndex,col,"text",e.target.value)}
+                              onKeyDown={e=>handleKeyDown(e,week.id,rowIndex,colIndex)}
+                              ref={el=>inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el}
+                              className="flex-1 text-xs border-0 outline-none resize-none overflow-hidden"
+                              style={{minHeight:"20px",whiteSpace:"pre-wrap",backgroundColor:style.bg,color:style.text==="text-white"?"white":"black"}}
+                              placeholder="Task..."
+                              onInput={e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}}/>
                           </div>
                         </td>
-                      )
+                      );
                     })}
                   </tr>
                 ))}
@@ -250,7 +240,7 @@ const WeeklyTaskOrganizer = () => {
   );
 };
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
+const root=ReactDOM.createRoot(document.getElementById("root"));
 root.render(<WeeklyTaskOrganizer />);
 </script>
 </body>
