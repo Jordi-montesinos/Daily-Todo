@@ -458,10 +458,10 @@ function WeeklyTaskOrganizer() {
                                 verticalAlign:'top'
                               }}
                             >
-                              <div style={{ display:'flex', alignItems:'flex-start', gap:4 }}>
+<div style={{ display:'flex', alignItems:'flex-start', gap:4 }}>
   {/* control stack: ranking + checkbox */}
   <div style={{
-    width: 20,                // narrower, same width as checkbox
+    width: 20,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -518,6 +518,19 @@ function WeeklyTaskOrganizer() {
     />
   </div>
 </div>
+</td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })}
+          </div>
+        ) : (
+          /* ---------- SUMMARY TAB ---------- */
+
 
           /* ---------- SUMMARY TAB ---------- */
           <div className="w-full p-3">
