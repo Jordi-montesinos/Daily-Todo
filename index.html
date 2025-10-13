@@ -72,8 +72,9 @@ function makeEmptyTasks() {
 
 /* compute current week/year for defaults */
 const [currentWeek, currentYear] = getISOWeekAndYear(new Date());
-
-/* ---------- Main Component ---------- */
+/**********************
+ * Main Component
+ **********************/
 function WeeklyTaskOrganizer() {
   // initialize from localStorage or default single week
   const initial = () => {
@@ -94,12 +95,11 @@ function WeeklyTaskOrganizer() {
   const [draggedItem, setDraggedItem] = useState(null);
   const inputRefs = useRef({});
   const fileInputRef = useRef(null);
-  const rowRefs = useRef({});
   const [copiedKeys, setCopiedKeys] = useState(()=> new Set());
 
   const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
 
-  /* cell colors */
+  /* colors */
   function getWeeklyObjectivesColor(i){
     if(i<=3) return { bg:"#dc2626", text:"white" };
     if(i<=7) return { bg:"#f97316", text:"white" };
@@ -118,6 +118,7 @@ function WeeklyTaskOrganizer() {
     return getDayColumnColor(rowIndex);
   }
 
+  /* sorting + update logic */
   function getCategoryRange(col, rowIndex){
     if(col === 'weeklyObjectives'){
       if(rowIndex <= 3) return [0,3];
@@ -163,7 +164,7 @@ function WeeklyTaskOrganizer() {
     }));
   }
 
-  /* Drag & drop */
+  /* drag/drop */
   function handleDrop(e, weekId, targetRow, col){
     e.preventDefault();
     if(!draggedItem || draggedItem.weekId !== weekId || draggedItem.col !== col){ setDraggedItem(null); return; }
@@ -177,8 +178,7 @@ function WeeklyTaskOrganizer() {
     }));
     setDraggedItem(null);
   }
-
-  /* keyboard navigation + Alt+Enter newline */
+  /* keyboard nav + alt+enter fix */
   function focusCell(weekId, row, col){
     if(row < 0 || col < 0 || col >= columns.length || row >= 16) return;
     const key = `${weekId}-${row}-${col}`;
@@ -187,17 +187,12 @@ function WeeklyTaskOrganizer() {
   }
   function handleKeyDown(e, weekId, row, col){
     if(e.key === 'Enter' && e.altKey){
-      const key = `${weekId}-${row}-${col}`;
-      const el = inputRefs.current[key];
-      if(el){
-        e.preventDefault();
-        const start = el.selectionStart || 0;
-        const end = el.selectionEnd || 0;
-        const val = el.value || '';
-        const newVal = val.slice(0,start) + '\n' + val.slice(end);
-        updateTask(weekId, row, col, 'text', newVal);
-        setTimeout(()=> { el.selectionStart = el.selectionEnd = start + 1; }, 0);
-      }
+      e.preventDefault();
+      const el = e.target;
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      el.value = el.value.slice(0, start) + '\n' + el.value.slice(end);
+      el.selectionStart = el.selectionEnd = start + 1;
       return;
     }
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); focusCell(weekId, row+1, col); }
@@ -206,7 +201,7 @@ function WeeklyTaskOrganizer() {
     else if(e.key === 'Tab' && e.shiftKey){ e.preventDefault(); focusCell(weekId, row, col-1); }
   }
 
-  /* add / delete weeks */
+  /* add new week */
   function addNewWeek(){
     const prev = weeks[0];
     const nowYear = new Date().getFullYear();
@@ -219,10 +214,6 @@ function WeeklyTaskOrganizer() {
       openObj.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].weeklyObjectives = { ...t.weeklyObjectives, completed:false }; });
     }
     setWeeks([newWeek, ...weeks]);
-  }
-  function deleteWeek(id){
-    if(weeks.length <= 1) return;
-    setWeeks(weeks.filter(w => w.id !== id));
   }
 
   /* save/load */
@@ -241,7 +232,7 @@ function WeeklyTaskOrganizer() {
     r.readAsText(f);
   }
 
-  /* week number edit inline */
+  /* week number edit */
   function updateWeekNumber(weekId, newNumber){
     setWeeks(prev => prev.map(w => w.id === weekId ? { ...w, weekNumber: newNumber } : w));
   }
@@ -254,10 +245,83 @@ function WeeklyTaskOrganizer() {
   /* today detection */
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+  /* summary filter + rows */
+  const [summaryFilter, setSummaryFilter] = useState('All');
+  const summaryRows = useMemo(() => {
+    const rows = [];
+    const mapColName = {
+      delegatedTasks: 'Delegated',
+      weeklyObjectives: 'Objectives',
+      monday: 'Monday',
+      tuesday: 'Tuesday',
+      wednesday: 'Wednesday',
+      thursday: 'Thursday',
+      friday: 'Friday'
+    };
+    weeks.slice().reverse().forEach(w => {
+      columns.forEach(col => {
+        w.tasks.forEach((t, idx) => {
+          const cell = t[col];
+          if(cell.text.trim() && !cell.completed){
+            rows.push({
+              key: `${w.id}-${col}-${idx}`,
+              weekId: w.id,
+              weekNumber: w.weekNumber,
+              year: w.year,
+              col,
+              colLabel: mapColName[col],
+              text: cell.text
+            });
+          }
+        });
+      });
+    });
+    return rows.filter(r => {
+      if(summaryFilter === 'All') return true;
+      if(summaryFilter === 'Delegated') return r.col === 'delegatedTasks';
+      if(summaryFilter === 'Objectives') return r.col === 'weeklyObjectives';
+      if(summaryFilter === 'Days') return ['monday','tuesday','wednesday','thursday','friday'].includes(r.col);
+      return true;
+    });
+  }, [weeks, summaryFilter]);
 
+  function addAllToNextWeekFromSummary(){
+    if(summaryRows.length === 0) return;
+    const latest = weeks[0];
+    const nowYear = new Date().getFullYear();
+    const nextNum = latest && typeof latest.weekNumber === 'number' ? latest.weekNumber + 1 : currentWeek;
+    let nextWeek = weeks.find(w => w.weekNumber === nextNum && w.year === nowYear);
+    if(!nextWeek){
+      nextWeek = { id: Date.now(), weekNumber: nextNum, year: nowYear, tasks: makeEmptyTasks() };
+      setWeeks(prev => [nextWeek, ...prev]);
+      setTimeout(()=> doCopyTo(nextWeek.id), 0);
+    } else {
+      doCopyTo(nextWeek.id);
+    }
+  }
+
+  function doCopyTo(nextWeekId){
+    setWeeks(prev => prev.map(w => {
+      if(w.id !== nextWeekId) return w;
+      const tasks = [...w.tasks];
+      let writeIndex = 15;
+      summaryRows.forEach(row => {
+        if(writeIndex < 0) return;
+        tasks[writeIndex].weeklyObjectives = { text: row.text, completed: false, ranking: writeIndex+1 };
+        writeIndex--;
+      });
+      return { ...w, tasks };
+    }));
+    setCopiedKeys(prev => {
+      const next = new Set(prev);
+      summaryRows.forEach(r => next.add(r.key));
+      return next;
+    });
+  }
   return (
     <div className="p-1 bg-white min-h-screen">
       <div className="bg-white w-full">
+        {/* Tabs */}
         <div className="flex items-center gap-2 px-2 py-2 border-b border-gray-200">
           <button
             onClick={()=>setActiveTab('organizer')}
@@ -279,6 +343,7 @@ function WeeklyTaskOrganizer() {
           >
             Monthly Summary
           </button>
+
           <div className="ml-auto flex gap-2">
             <button onClick={saveToFile} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded">Save</button>
             <button onClick={()=>fileInputRef.current?.click()} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded">Load</button>
@@ -289,96 +354,231 @@ function WeeklyTaskOrganizer() {
           </div>
         </div>
 
-        {activeTab==='organizer' && weeks.map((week) => {
-          const year = week.year || currentYear;
-          const wkNum = Number(week.weekNumber) || currentWeek;
-          const monday = getDateOfISOWeek(wkNum, year);
-          const dates = [
-            monday,
-            new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 1),
-            new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 2),
-            new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 3),
-            new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 4)
-          ];
+        {activeTab==='organizer' ? (
+          <div>
+            {weeks.map((week)=>{
+              const year = week.year || currentYear;
+              const wkNum = Number(week.weekNumber) || currentWeek;
+              const monday = getDateOfISOWeek(wkNum, year);
+              const dates = [
+                monday,
+                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+1),
+                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+2),
+                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+3),
+                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+4)
+              ];
 
-          return (
-            <table key={week.id} className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className="bg-gray-700 text-white text-center p-2">
-                    Week{" "}
-                    <input
-                      value={week.weekNumber}
-                      onChange={(e)=> updateWeekNumber(week.id, parseInt(e.target.value) || 0)}
-                      className="w-14 text-lg font-semibold bg-transparent border-b border-gray-300 focus:outline-none text-white text-center"
-                    />{" "}
-                    / Delegated Tasks
-                  </th>
-                  <th className="bg-gray-700 text-white text-center p-2">Weekly Objectives</th>
-                  {["Monday","Tuesday","Wednesday","Thursday","Friday"].map((day,i)=>(
-                    <th key={day} className="bg-gray-700 text-white text-center p-2">
-                      {day} ({formatDayShort(dates[i])})
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {week.tasks.map((task,rowIndex)=>(
-                  <tr key={rowIndex}>
-                    {columns.map((col,colIndex)=>{
-                      const style = getCellStyle(col,rowIndex);
-                      return (
-                        <td
-                          key={col}
-                          draggable
-                          onDragStart={(e)=>setDraggedItem({weekId:week.id,rowIndex,col})}
-                          onDragOver={(e)=>e.preventDefault()}
-                          onDrop={(e)=>handleDrop(e,week.id,rowIndex,col)}
-                          style={{backgroundColor:style.bg,color:style.text==='white'?'#fff':'#000',padding:'6px',borderLeft:'1px solid rgba(0,0,0,0.06)'}}
-                        >
-                          <div style={{ display:'flex', gap:8 }}>
-                            <div style={{ minWidth:44, display:'flex', flexDirection:'column', alignItems:'flex-start', gap:4 }}>
-                              <input
-                                type="number"
-                                min="1"
-                                value={task[col].ranking}
-                                onChange={(e)=>updateTask(week.id,rowIndex,col,'ranking',parseInt(e.target.value)||1)}
-                                className="text-xs"
-                                style={{ width:36, textAlign:'center', background:style.bg, color:style.text==='white'?'#fff':'#000', border:'none', outline:'none' }}
-                              />
-                              <input
-                                type="checkbox"
-                                checked={task[col].completed}
-                                onChange={(e)=>updateTask(week.id,rowIndex,col,'completed',e.target.checked)}
-                                style={{ width:16, height:16, marginTop:2 }}
-                              />
-                            </div>
-                            <div style={{flex:1}}>
-                              <textarea
-                                value={task[col].text}
-                                onChange={(e)=>updateTask(week.id,rowIndex,col,'text',e.target.value)}
-                                onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)}
-                                ref={el=>{inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el;}}
-                                placeholder="Task..."
-                                style={{width:'100%',resize:'none',overflow:'hidden',background:style.bg,color:style.text==='white'?'#fff':'#000',border:'none',outline:'none',fontSize:12,lineHeight:'1.2rem'}}
-                                onInput={(e)=>{e.target.style.height='auto';e.target.style.height=e.target.scrollHeight+'px';}}
-                              />
-                            </div>
-                          </div>
-                        </td>
-                      );
-                    })}
+              // compute which weekday column is "today" (Mon..Fri = indices 2..6)
+              let todayColIndex = -1;
+              dates.forEach((d,i)=>{
+                const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+                if(key === todayKey) todayColIndex = i + 2;
+              });
+
+              return (
+                <table key={week.id} className="w-full border-collapse mb-2">
+                  <thead>
+                    <tr>
+                      {/* first header cell: week number inline + smaller font */}
+                      <th
+                        className="text-white text-center px-2 py-1 text-xs"
+                        style={{
+                          background: todayColIndex===0 ? '#3b82f6' : '#374151',
+                          borderLeft: todayColIndex===0 ? '3px solid #2563eb' : '0',
+                          borderRight: todayColIndex===0 ? '3px solid #2563eb' : '0',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        Week{" "}
+                        <input
+                          value={week.weekNumber}
+                          onChange={(e)=> updateWeekNumber(week.id, parseInt(e.target.value) || 0)}
+                          className="w-10 text-xs font-semibold bg-transparent border-b border-gray-300 focus:outline-none text-white text-center"
+                          title="Click to edit week number"
+                        />{" "}
+                        / Delegated Tasks
+                      </th>
+
+                      {/* weekly objectives */}
+                      <th
+                        className="text-white text-center px-2 py-1 text-xs"
+                        style={{ background:'#374151', whiteSpace:'nowrap' }}
+                      >
+                        Weekly Objectives
+                      </th>
+
+                      {/* weekdays with date inline; highlight today with bright blue */}
+                      {["Monday","Tuesday","Wednesday","Thursday","Friday"].map((day,i)=>{
+                        const idx = i + 2;
+                        const isToday = idx === todayColIndex;
+                        return (
+                          <th
+                            key={day}
+                            className="text-white text-center px-2 py-1 text-xs"
+                            style={{
+                              background: isToday ? '#3b82f6' : '#374151',
+                              borderLeft: isToday ? '3px solid #2563eb' : '0',
+                              borderRight: isToday ? '3px solid #2563eb' : '0',
+                              whiteSpace:'nowrap'
+                            }}
+                          >
+                            {day} ({formatDayShort(dates[i])})
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {week.tasks.map((task,rowIndex)=>(
+                      <tr key={rowIndex}>
+                        {["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"].map((col,colIndex)=>{
+                          const style = getCellStyle(col,rowIndex);
+                          const isToday = colIndex === todayColIndex;
+                          const leftBorder = colIndex === 0 ? '0' : '1px solid rgba(0,0,0,0.06)';
+                          const cellBorderLeft = isToday ? '3px solid #2563eb' : leftBorder;
+                          const cellBorderRight = isToday ? '3px solid #2563eb' : '0';
+
+                          return (
+                            <td
+                              key={col}
+                              draggable
+                              onDragStart={(e)=>setDraggedItem({weekId:week.id,rowIndex,col})}
+                              onDragOver={(e)=>e.preventDefault()}
+                              onDrop={(e)=>handleDrop(e,week.id,rowIndex,col)}
+                              style={{
+                                backgroundColor: style.bg,
+                                color: style.text==='white'?'#fff':'#000',
+                                padding:'6px',
+                                borderLeft: cellBorderLeft,
+                                borderRight: cellBorderRight,
+                                verticalAlign:'top'
+                              }}
+                            >
+                              <div style={{ display:'flex', gap:6 }}>
+                                {/* ultra-compact control stack: ranking (centered) above checkbox */}
+                                <div style={{ width:30, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={task[col].ranking}
+                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'ranking',parseInt(e.target.value)||1)}
+                                    className="text-[11px]"
+                                    style={{
+                                      width:28,
+                                      height:18,
+                                      lineHeight:'18px',
+                                      textAlign:'center',
+                                      background:style.bg,
+                                      color:style.text==='white'?'#fff':'#000',
+                                      border:'none',
+                                      outline:'none',
+                                      padding:0,
+                                    }}
+                                  />
+                                  <input
+                                    type="checkbox"
+                                    checked={task[col].completed}
+                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'completed',e.target.checked)}
+                                    style={{ width:14, height:14 }}
+                                  />
+                                </div>
+
+                                {/* big textarea area */}
+                                <div style={{flex:1}}>
+                                  <textarea
+                                    value={task[col].text}
+                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'text',e.target.value)}
+                                    onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)}
+                                    ref={el=>{ if(!inputRefs.current) inputRefs.current={}; inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el; }}
+                                    placeholder="Task..."
+                                    style={{
+                                      width:'100%',
+                                      minHeight:20,
+                                      resize:'none',
+                                      overflow:'hidden',
+                                      background:style.bg,
+                                      color:style.text==='white'?'#fff':'#000',
+                                      border:'none',
+                                      outline:'none',
+                                      fontSize:12,
+                                      lineHeight:'1.2rem'
+                                    }}
+                                    onInput={(e)=>{ e.target.style.height='auto'; e.target.style.height=e.target.scrollHeight+'px'; }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })}
+          </div>
+        ) : (
+          /* ---------- SUMMARY TAB ---------- */
+          <div className="w-full p-3">
+            <div className="flex items-center gap-3 mb-3">
+              <label className="text-sm text-gray-600">Filter:</label>
+              <select
+                value={summaryFilter}
+                onChange={(e)=>setSummaryFilter(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+              >
+                <option>All</option>
+                <option>Delegated</option>
+                <option>Objectives</option>
+                <option>Days</option>
+              </select>
+
+              <button
+                onClick={addAllToNextWeekFromSummary}
+                className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded"
+                title="Add all open tasks below to the next week's Weekly Objectives (creates it if needed). Tasks will fill from the bottom."
+              >
+                Add All to Next Week
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ borderCollapse:'collapse' }}>
+                <thead>
+                  <tr className="bg-gray-700 text-white text-sm">
+                    <th className="p-2 text-center">Week</th>
+                    <th className="p-2 text-center">Year</th>
+                    <th className="p-2 text-center">Column</th>
+                    <th className="p-2 text-center">Task</th>
+                    <th className="p-2 text-center">Copied</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          );
-        })}
+                </thead>
+                <tbody>
+                  {summaryRows.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="p-4 text-center text-gray-500">No open tasks 🎉</td>
+                    </tr>
+                  ) : summaryRows.map(row => (
+                    <tr key={row.key} className="border-b border-gray-200">
+                      <td className="p-2 text-center">{row.weekNumber}</td>
+                      <td className="p-2 text-center">{row.year}</td>
+                      <td className="p-2 text-center">{row.colLabel}</td>
+                      <td className="p-2">{row.text}</td>
+                      <td className="p-2 text-center">{copiedKeys.has(row.key) ? '✓' : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+/* ---------- boot ---------- */
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<WeeklyTaskOrganizer />);
 </script>
