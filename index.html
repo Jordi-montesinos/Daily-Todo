@@ -134,26 +134,29 @@ function WeeklyTaskOrganizer() {
   }
 
   function sortColumnByCategory(tasks, col){
-    const newTasks = [...tasks];
-    const ranges = [
-      getCategoryRange(col,0),
-      getCategoryRange(col,4),
-      getCategoryRange(col,8),
-      getCategoryRange(col,12)
-    ];
-    ranges.forEach(([start,end])=>{
-      const seg = [];
-      for(let i=start;i<=end;i++) seg.push({task:newTasks[i][col]});
-      const incomplete = seg.filter(s=>!s.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
-      const complete = seg.filter(s=>s.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
-      const merged = [...incomplete,...complete];
-      merged.forEach((it, idx)=> {
-        newTasks[start + idx] = { ...newTasks[start + idx], [col]: it.task };
-      });
-    });
-    return newTasks;
-  }
+  const newTasks = [...tasks];
+  const ranges = [
+    getCategoryRange(col,0),
+    getCategoryRange(col,4),
+    getCategoryRange(col,8),
+    getCategoryRange(col,12)
+  ];
+  ranges.forEach(([start,end])=>{
+    const seg = [];
+    for(let i=start;i<=end;i++) seg.push({ task:newTasks[i][col], rowIndex:i });
 
+    const incomplete = seg.filter(s=>!s.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
+    const complete   = seg.filter(s=> s.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
+    const merged = [...incomplete, ...complete];
+
+    // normalize rankings inside this category
+    merged.forEach((it, idx)=>{
+      const normalized = { ...it.task, ranking: idx+1 };
+      newTasks[start + idx] = { ...newTasks[start + idx], [col]: normalized };
+    });
+  });
+  return newTasks;
+}
   function updateTask(weekId, rowIndex, col, field, value){
     setWeeks(prev => prev.map(w => {
       if(w.id !== weekId) return w;
