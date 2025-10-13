@@ -457,33 +457,38 @@ function WeeklyTaskOrganizer() {
                             >
                               <div style={{ display:'flex', gap:6 }}>
                                 {/* ultra-compact control stack: ranking (centered) above checkbox */}
-                                <div style={{ width:30, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={task[col].ranking}
-                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'ranking',parseInt(e.target.value)||1)}
-                                    className="text-[11px]"
-                                    style={{
-                                      width:28,
-                                      height:18,
-                                      lineHeight:'18px',
-                                      textAlign:'center',
-                                      background:style.bg,
-                                      color:style.text==='white'?'#fff':'#000',
-                                      border:'none',
-                                      outline:'none',
-                                      padding:0,
-                                    }}
-                                  />
-                                  <input
-                                    type="checkbox"
-                                    checked={task[col].completed}
-                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'completed',e.target.checked)}
-                                    style={{ width:14, height:14 }}
-                                  />
-                                </div>
-
+                                <div style={{
+  width: 30,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 4,
+}}>
+  <input
+    type="number"
+    min="1"
+    value={task[col].ranking}
+    onChange={(e)=>updateTask(week.id,rowIndex,col,'ranking',parseInt(e.target.value)||1)}
+    style={{
+      width: 26,
+      height: 20,
+      textAlign: 'center',
+      fontSize: '11px',
+      lineHeight: '20px',
+      background: style.bg,
+      color: style.text==='white' ? '#fff' : '#000',
+      border: '1px solid rgba(0,0,0,0.1)',
+      borderRadius: 3,
+    }}
+  />
+  <input
+    type="checkbox"
+    checked={task[col].completed}
+    onChange={(e)=>updateTask(week.id,rowIndex,col,'completed',e.target.checked)}
+    style={{ width: 14, height: 14 }}
+  />
+</div>
                                 {/* big textarea area */}
                                 <div style={{flex:1}}>
                                   <textarea
