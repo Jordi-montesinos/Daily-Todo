@@ -507,15 +507,7 @@ function saveToFile(){
 >
   <div style={{ display:'flex', alignItems:'flex-start', gap:4 }}>
     {/* control stack: ranking + checkbox */}
-    <div style={{
-      width: 20,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'flex-start',
-      gap: 2
-    }}>
-      {/* 🔹 Entire control stack (ranking + checkbox) is now the drag handle */}
+    {/* 🔹 Entire control stack (ranking + checkbox) is now the drag handle */}
 <div
   draggable
   onDragStart={(e)=>setDraggedItem({weekId:week.id,rowIndex,col})}
@@ -526,7 +518,7 @@ function saveToFile(){
     justifyContent: 'flex-start',
     gap: 2,
     width: 20,
-    cursor: 'grab'   // visual cue
+    cursor: 'grab'
   }}
 >
   <input
