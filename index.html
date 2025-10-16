@@ -206,19 +206,6 @@ function handleDrop(e, weekId, targetRow, col){
 }
 
 
-    // Renumber rankings for this column
-    tasks = tasks.map((t, i) => ({
-      ...t,
-      [col]: { ...t[col], ranking: i + 1 }
-    }));
-
-    return { ...w, tasks };
-  }));
-
-  setDraggedItem(null);
-}
-
-
   /* keyboard nav + alt+enter fix */
   function focusCell(weekId, row, col){
     if(row < 0 || col < 0 || col >= columns.length || row >= 16) return;
