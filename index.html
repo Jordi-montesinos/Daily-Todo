@@ -433,23 +433,25 @@ function saveToFile(){
                     <tr>
                       {/* first header cell: week number inline + smaller font */}
                       <th
-                        className="text-white text-center px-2 py-1 text-xs"
-                        style={{
-                          background: todayColIndex===0 ? '#3b82f6' : '#374151',
-                          borderLeft: todayColIndex===0 ? '3px solid #2563eb' : '0',
-                          borderRight: todayColIndex===0 ? '3px solid #2563eb' : '0',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        Week{" "}
-                        <input
-                          value={week.weekNumber}
-                          onChange={(e)=> updateWeekNumber(week.id, parseInt(e.target.value) || 0)}
-                          className="w-10 text-xs font-semibold bg-transparent border-b border-gray-300 focus:outline-none text-white text-center"
-                          title="Click to edit week number"
-                        />{" "}
-                        / Delegated Tasks
-                      </th>
+  className="text-white text-center px-2 py-1 text-xs"
+  style={{
+    background: todayColIndex===0 ? '#3b82f6' : '#374151',
+    borderLeft: todayColIndex===0 ? '3px solid #2563eb' : '0',
+    borderRight: todayColIndex===0 ? '3px solid #2563eb' : '0',
+    whiteSpace: 'nowrap',
+    width: '60px'   // 🔹 narrower column
+  }}
+>
+  W-
+  <input
+    value={week.weekNumber}
+    onChange={(e)=> updateWeekNumber(week.id, parseInt(e.target.value) || 0)}
+    className="w-8 text-xs font-semibold bg-transparent border-b border-gray-300 focus:outline-none text-white text-center"
+    title="Click to edit week number"
+  />{" "}
+  / Deleg.
+</th>
+
 
                       {/* weekly objectives */}
                       <th
