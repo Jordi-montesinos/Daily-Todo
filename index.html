@@ -166,6 +166,15 @@ function WeeklyTaskOrganizer() {
       return { ...w, tasks: newTasks };
     }));
   }
+/* Auto-resize all textareas on load/refresh */
+useEffect(() => {
+  Object.values(inputRefs.current).forEach(el => {
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+  });
+}, [weeks]);
 
 /* drag/drop */
 function handleDrop(e, weekId, targetRow, col){
