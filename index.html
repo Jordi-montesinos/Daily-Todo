@@ -170,22 +170,37 @@ function WeeklyTaskOrganizer() {
   /* drag/drop */
   function handleDrop(e, weekId, targetRow, col){
   e.preventDefault();
-  if(!draggedItem || draggedItem.weekId !== weekId || draggedItem.col !== col){ 
-    setDraggedItem(null); 
-    return; 
+  if(!draggedItem || draggedItem.weekId !== weekId || draggedItem.col !== col){
+    setDraggedItem(null);
+    return;
   }
+
   setWeeks(prev => prev.map(w => {
     if(w.id !== weekId) return w;
-    const tasks = [...w.tasks];
-    // swap cells
-    const tmp = tasks[draggedItem.rowIndex][col];
-    tasks[draggedItem.rowIndex][col] = tasks[targetRow][col];
-    tasks[targetRow][col] = tmp;
-    // 🔹 Re-sort/reindex
-    return { ...w, tasks: sortColumnByCategory(tasks, col) };
+    let tasks = [...w.tasks];
+
+    // Take the dragged task out
+    const draggedTask = tasks[draggedItem.rowIndex][col];
+    tasks.splice(draggedItem.rowIndex, 1);
+
+    // Insert it at the drop location
+    tasks.splice(targetRow, 0, {
+      ...tasks[targetRow],
+      [col]: draggedTask
+    });
+
+    // Renumber rankings for this column
+    tasks = tasks.map((t, i) => ({
+      ...t,
+      [col]: { ...t[col], ranking: i + 1 }
+    }));
+
+    return { ...w, tasks };
   }));
+
   setDraggedItem(null);
 }
+
 
   /* keyboard nav + alt+enter fix */
   function focusCell(weekId, row, col){
