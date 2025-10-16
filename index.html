@@ -169,18 +169,24 @@ function WeeklyTaskOrganizer() {
 
   /* drag/drop */
   function handleDrop(e, weekId, targetRow, col){
-    e.preventDefault();
-    if(!draggedItem || draggedItem.weekId !== weekId || draggedItem.col !== col){ setDraggedItem(null); return; }
-    setWeeks(prev => prev.map(w => {
-      if(w.id !== weekId) return w;
-      const tasks = [...w.tasks];
-      const tmp = tasks[draggedItem.rowIndex][col];
-      tasks[draggedItem.rowIndex][col] = tasks[targetRow][col];
-      tasks[targetRow][col] = tmp;
-      return { ...w, tasks: sortColumnByCategory(tasks, col) };
-    }));
-    setDraggedItem(null);
+  e.preventDefault();
+  if(!draggedItem || draggedItem.weekId !== weekId || draggedItem.col !== col){ 
+    setDraggedItem(null); 
+    return; 
   }
+  setWeeks(prev => prev.map(w => {
+    if(w.id !== weekId) return w;
+    const tasks = [...w.tasks];
+    // swap cells
+    const tmp = tasks[draggedItem.rowIndex][col];
+    tasks[draggedItem.rowIndex][col] = tasks[targetRow][col];
+    tasks[targetRow][col] = tmp;
+    // 🔹 Re-sort/reindex
+    return { ...w, tasks: sortColumnByCategory(tasks, col) };
+  }));
+  setDraggedItem(null);
+}
+
   /* keyboard nav + alt+enter fix */
   function focusCell(weekId, row, col){
     if(row < 0 || col < 0 || col >= columns.length || row >= 16) return;
