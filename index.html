@@ -222,10 +222,13 @@ function WeeklyTaskOrganizer() {
   /* save/load */
   function saveToFile(){
     const blob = new Blob([JSON.stringify(weeks, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `weekly-organizer-${new Date().toISOString().split('T')[0]}.json`;
-    a.click(); URL.revokeObjectURL(a.href);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = "weekly-organizer.json"; // fixed filename (OneDrive overwrites automatically)
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
+
   function loadFromFile(e){
     const f = e.target.files?.[0]; if(!f) return;
     const r = new FileReader();
@@ -234,6 +237,27 @@ function WeeklyTaskOrganizer() {
     };
     r.readAsText(f);
   }
+
+  /* week number edit */
+  function updateWeekNumber(weekId, newNumber){
+    setWeeks(prev => prev.map(w => w.id === weekId ? { ...w, weekNumber: newNumber } : w));
+  }
+
+  /* localStorage autosave (still keeps a backup) */
+  useEffect(()=> {
+    try { localStorage.setItem('weekly-task-organizer', JSON.stringify(weeks)); } catch {}
+  }, [weeks]);
+
+  /* 🔹 NEW: auto-download 2 minutes after last change */
+  useEffect(() => {
+    if (!weeks || weeks.length === 0) return;
+
+    const timer = setTimeout(() => {
+      saveToFile();
+    }, 2 * 60 * 1000); // 2 minutes
+
+    return () => clearTimeout(timer); // reset timer if more edits happen
+  }, [weeks]);
 
   /* week number edit */
   function updateWeekNumber(weekId, newNumber){
