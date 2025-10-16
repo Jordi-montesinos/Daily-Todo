@@ -167,8 +167,8 @@ function WeeklyTaskOrganizer() {
     }));
   }
 
-  /* drag/drop */
- function handleDrop(e, weekId, targetRow, col){
+/* drag/drop */
+function handleDrop(e, weekId, targetRow, col){
   e.preventDefault();
   if(!draggedItem || draggedItem.weekId !== weekId || draggedItem.col !== col){
     setDraggedItem(null);
@@ -204,6 +204,7 @@ function WeeklyTaskOrganizer() {
 
   setDraggedItem(null);
 }
+
 
     // Renumber rankings for this column
     tasks = tasks.map((t, i) => ({
