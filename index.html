@@ -220,14 +220,15 @@ function WeeklyTaskOrganizer() {
   }
 
   /* save/load */
-  function saveToFile(){
-    const blob = new Blob([JSON.stringify(weeks, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = "weekly-organizer.json"; // fixed filename (OneDrive overwrites automatically)
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
+function saveToFile(){
+  const blob = new Blob([JSON.stringify(weeks, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const today = new Date().toISOString().split('T')[0]; // yyyy-mm-dd
+  a.download = `weekly-organizer-${today}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
   function loadFromFile(e){
     const f = e.target.files?.[0]; if(!f) return;
@@ -236,11 +237,6 @@ function WeeklyTaskOrganizer() {
       try { setWeeks(JSON.parse(ev.target.result)); } catch { alert('Invalid file'); }
     };
     r.readAsText(f);
-  }
-
-  /* week number edit */
-  function updateWeekNumber(weekId, newNumber){
-    setWeeks(prev => prev.map(w => w.id === weekId ? { ...w, weekNumber: newNumber } : w));
   }
 
   /* localStorage autosave (still keeps a backup) */
@@ -263,11 +259,6 @@ function WeeklyTaskOrganizer() {
   function updateWeekNumber(weekId, newNumber){
     setWeeks(prev => prev.map(w => w.id === weekId ? { ...w, weekNumber: newNumber } : w));
   }
-
-  /* autosave */
-  useEffect(()=> {
-    try { localStorage.setItem('weekly-task-organizer', JSON.stringify(weeks)); } catch {}
-  }, [weeks]);
 
   /* today detection */
   const today = new Date();
