@@ -112,27 +112,24 @@ function WeeklyTaskOrganizer() {
     if(i>=14) return { bg:"#eff6ff", text:"black" };
     return { bg:"#ffffff", text:"black" };
   }
-  function getCellStyle(col, rowIndex, text){
-  const ghost = { bg: "#f9fafb", text: "gray" }; // ghost = light gray background
+function getCellStyle(col, rowIndex, text){
+  const base =
+    col === 'weeklyObjectives' ? getWeeklyObjectivesColor(rowIndex) :
+    col === 'delegatedTasks' ? { bg:"#ffffff", text:"black" } :
+    getDayColumnColor(rowIndex);
 
-  // if no text, return ghost style
-  if(!text || text.trim()==="") return ghost;
-
-  // toned-down colors for active cells
-  if(col === 'weeklyObjectives'){
-    if(rowIndex <= 3) return { bg:"#f87171", text:"white" };      // softer red
-    if(rowIndex <= 7) return { bg:"#fb923c", text:"white" };      // softer orange
-    if(rowIndex <= 11) return { bg:"#facc15", text:"black" };     // yellow
-    return { bg:"#fde68a", text:"black" };                        // pale yellow
+  if(!text || text.trim()===""){
+    // lighter tone of the original background
+    return { 
+      bg: base.bg.includes("#") ? base.bg + "33" : "#f3f4f6", // 20% opacity if hex
+      text: "#9ca3af",  // gray text
+      ghost: true
+    };
   }
-  if(col === 'delegatedTasks') return { bg:"#e5e7eb", text:"black" }; // light gray for deleg
-  if(rowIndex === 0) return { bg:"#f87171", text:"white" };       // soft red for top
-  if(rowIndex <= 3) return { bg:"#fde68a", text:"black" };        // pale yellow
-  if(rowIndex >= 14) return { bg:"#eff6ff", text:"black" };       // very light blue
-  return { bg:"#ffffff", text:"black" };                          // default white
+
+  // Active task: use original but soften slightly
+  return { ...base, ghost: false };
 }
-
-
   /* sorting + update logic */
   function getCategoryRange(col, rowIndex){
     if(col === 'weeklyObjectives'){
@@ -553,7 +550,7 @@ function saveToFile(){
       fontSize: 10,
       lineHeight: '16px',
       background: style.bg,
-      color: style.text==='white' ? '#fff' : '#000',
+      color: style.ghost ? '#9ca3af' : (style.text==='white' ? '#fff' : '#000'),
       border: 'none',
       outline: 'none',
       padding: 0,
@@ -563,39 +560,46 @@ function saveToFile(){
     type="checkbox"
     checked={task[col].completed}
     onChange={(e)=>updateTask(week.id,rowIndex,col,'completed',e.target.checked)}
-    style={{ width:14, height:14, margin:0, padding:0 }}
+    style={{ 
+      width:14, 
+      height:14, 
+      margin:0, 
+      padding:0, 
+      opacity: style.ghost ? 0.4 : 1   // greyed out when empty
+    }}
   />
 </div>
 
-
     {/* textarea fills the rest */}
     <div style={{ flex:1 }}>
-      <textarea
-        value={task[col].text}
-        onChange={(e)=>updateTask(week.id,rowIndex,col,'text',e.target.value)}
-        onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)}
-        ref={el=>{
-          if(!inputRefs.current) inputRefs.current={};
-          inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el;
-        }}
-        placeholder="Task..."
-        style={{
-          width:'100%',
-          minHeight:20,
-          resize:'none',
-          overflow:'hidden',
-          background: style.bg,
-          color: style.text==='white' ? '#fff' : '#000',
-          border:'none',
-          outline:'none',
-          fontSize:12,
-          lineHeight:'1.2rem'
-        }}
-        onInput={(e)=>{
-          e.target.style.height='auto';
-          e.target.style.height=e.target.scrollHeight+'px';
-        }}
-      />
+     <textarea
+  value={task[col].text}
+  onChange={(e)=>updateTask(week.id,rowIndex,col,'text',e.target.value)}
+  onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)}
+  ref={el=>{
+    if(!inputRefs.current) inputRefs.current={};
+    inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el;
+  }}
+  placeholder={style.ghost ? "..." : "Task..."}
+  style={{
+    width:'100%',
+    minHeight:20,
+    resize:'none',
+    overflow:'hidden',
+    background:style.bg,
+    color: style.text==='white' ? '#fff' : style.text,
+    border:'none',
+    outline:'none',
+    fontSize:12,
+    lineHeight:'1.2rem',
+    fontStyle: style.ghost ? 'italic' : 'normal'
+  }}
+  onInput={(e)=>{
+    e.target.style.height='auto';
+    e.target.style.height=e.target.scrollHeight+'px';
+  }}
+/>
+
     </div>
   </div>
 </td>
