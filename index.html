@@ -112,11 +112,26 @@ function WeeklyTaskOrganizer() {
     if(i>=14) return { bg:"#eff6ff", text:"black" };
     return { bg:"#ffffff", text:"black" };
   }
-  function getCellStyle(col, rowIndex){
-    if(col === 'weeklyObjectives') return getWeeklyObjectivesColor(rowIndex);
-    if(col === 'delegatedTasks') return { bg:"#ffffff", text:"black" };
-    return getDayColumnColor(rowIndex);
+  function getCellStyle(col, rowIndex, text){
+  const ghost = { bg: "#f9fafb", text: "gray" }; // ghost = light gray background
+
+  // if no text, return ghost style
+  if(!text || text.trim()==="") return ghost;
+
+  // toned-down colors for active cells
+  if(col === 'weeklyObjectives'){
+    if(rowIndex <= 3) return { bg:"#f87171", text:"white" };      // softer red
+    if(rowIndex <= 7) return { bg:"#fb923c", text:"white" };      // softer orange
+    if(rowIndex <= 11) return { bg:"#facc15", text:"black" };     // yellow
+    return { bg:"#fde68a", text:"black" };                        // pale yellow
   }
+  if(col === 'delegatedTasks') return { bg:"#e5e7eb", text:"black" }; // light gray for deleg
+  if(rowIndex === 0) return { bg:"#f87171", text:"white" };       // soft red for top
+  if(rowIndex <= 3) return { bg:"#fde68a", text:"black" };        // pale yellow
+  if(rowIndex >= 14) return { bg:"#eff6ff", text:"black" };       // very light blue
+  return { bg:"#ffffff", text:"black" };                          // default white
+}
+
 
   /* sorting + update logic */
   function getCategoryRange(col, rowIndex){
@@ -487,7 +502,7 @@ function saveToFile(){
                     {week.tasks.map((task,rowIndex)=>(
                       <tr key={rowIndex}>
                         {["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"].map((col,colIndex)=>{
-                          const style = getCellStyle(col,rowIndex);
+                          const style = getCellStyle(col, rowIndex, task[col].text);
                           const isToday = colIndex === todayColIndex;
                           const leftBorder = colIndex === 0 ? '0' : '1px solid rgba(0,0,0,0.06)';
                           const cellBorderLeft = isToday ? '3px solid #2563eb' : leftBorder;
