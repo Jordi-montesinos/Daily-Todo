@@ -130,6 +130,7 @@ function getCellStyle(col, rowIndex, text){
   // Active task: use original but soften slightly
   return { ...base, ghost: false };
 }
+
   /* sorting + update logic */
   function getCategoryRange(col, rowIndex){
     if(col === 'weeklyObjectives'){
@@ -569,6 +570,7 @@ function saveToFile(){
     }}
   />
 </div>
+
 
     {/* textarea fills the rest */}
     <div style={{ flex:1 }}>
