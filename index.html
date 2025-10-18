@@ -60,15 +60,16 @@ function formatDayShort(d) {
 /* ---------- tasks/week defaults ---------- */
 function makeEmptyTasks() {
   return Array(16).fill(null).map((_, i) => ({
-    delegatedTasks: { text: "", completed: false, ranking: i+1 },
-    weeklyObjectives: { text: "", completed: false, ranking: i+1 },
-    monday: { text: "", completed: false, ranking: i+1 },
-    tuesday: { text: "", completed: false, ranking: i+1 },
-    wednesday: { text: "", completed: false, ranking: i+1 },
-    thursday: { text: "", completed: false, ranking: i+1 },
-    friday: { text: "", completed: false, ranking: i+1 }
+    delegatedTasks:   { text: "", status: 0, ranking: i+1 },
+    weeklyObjectives: { text: "", status: 0, ranking: i+1 },
+    monday:           { text: "", status: 0, ranking: i+1 },
+    tuesday:          { text: "", status: 0, ranking: i+1 },
+    wednesday:        { text: "", status: 0, ranking: i+1 },
+    thursday:         { text: "", status: 0, ranking: i+1 },
+    friday:           { text: "", status: 0, ranking: i+1 }
   }));
 }
+
 
 /* compute current week/year for defaults */
 const [currentWeek, currentYear] = getISOWeekAndYear(new Date());
@@ -146,30 +147,37 @@ function getCellStyle(col, rowIndex, text){
     return [14,15];
   }
 
-  function sortColumnByCategory(tasks, col){
+function sortColumnByCategory(tasks, col) {
   const newTasks = [...tasks];
+
   const ranges = [
     getCategoryRange(col,0),
     getCategoryRange(col,4),
     getCategoryRange(col,8),
     getCategoryRange(col,12)
   ];
+
   ranges.forEach(([start,end])=>{
     const seg = [];
     for(let i=start;i<=end;i++) seg.push({ task:newTasks[i][col], rowIndex:i });
 
-    const incomplete = seg.filter(s=>!s.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
-    const complete   = seg.filter(s=> s.task.completed).sort((a,b)=>a.task.ranking-b.task.ranking);
-    const merged = [...incomplete, ...complete];
+    const active   = seg.filter(s => s.task.status !== 2)
+                        .sort((a,b)=>a.task.ranking-b.task.ranking);
+    const complete = seg.filter(s => s.task.status === 2)
+                        .sort((a,b)=>a.task.ranking-b.task.ranking);
 
-    // normalize rankings inside this category
+    const merged = [...active, ...complete];
+
     merged.forEach((it, idx)=>{
       const normalized = { ...it.task, ranking: idx+1 };
       newTasks[start + idx] = { ...newTasks[start + idx], [col]: normalized };
     });
   });
+
   return newTasks;
 }
+
+
   function updateTask(weekId, rowIndex, col, field, value){
     setWeeks(prev => prev.map(w => {
       if(w.id !== weekId) return w;
@@ -207,7 +215,7 @@ function handleDrop(e, weekId, targetRow, col){
     // remove from original row
     tasks[draggedItem.rowIndex] = {
       ...tasks[draggedItem.rowIndex],
-      [col]: { text:"", completed:false, ranking: draggedItem.rowIndex+1 }
+        [col]: { text:"", status:0, ranking: draggedItem.rowIndex+1 }
     };
 
     // shift tasks and insert at new row
@@ -272,10 +280,12 @@ function handleDrop(e, weekId, targetRow, col){
     const nextNum = prev && typeof prev.weekNumber === 'number' ? prev.weekNumber + 1 : currentWeek;
     const newWeek = { id: Date.now(), weekNumber: nextNum, year: nowYear, tasks: makeEmptyTasks() };
     if(prev){
-      const openDel = prev.tasks.filter(t => t.delegatedTasks.text.trim() && !t.delegatedTasks.completed);
-      const openObj = prev.tasks.filter(t => t.weeklyObjectives.text.trim() && !t.weeklyObjectives.completed);
-      openDel.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].delegatedTasks = { ...t.delegatedTasks, completed:false }; });
-      openObj.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].weeklyObjectives = { ...t.weeklyObjectives, completed:false }; });
+     const openDel = prev.tasks.filter(t => t.delegatedTasks.text.trim() && t.delegatedTasks.status !== 2);
+const openObj = prev.tasks.filter(t => t.weeklyObjectives.text.trim() && t.weeklyObjectives.status !== 2);
+
+openDel.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].delegatedTasks = { ...t.delegatedTasks, status:0 }; });
+openObj.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].weeklyObjectives = { ...t.weeklyObjectives, status:0 }; });
+
     }
     setWeeks([newWeek, ...weeks]);
   }
@@ -341,7 +351,7 @@ function saveToFile(){
       columns.forEach(col => {
         w.tasks.forEach((t, idx) => {
           const cell = t[col];
-          if(cell.text.trim() && !cell.completed){
+          if (cell.text.trim() && cell.status !== 2) {  // only non-completed
             rows.push({
               key: `${w.id}-${col}-${idx}`,
               weekId: w.id,
@@ -352,6 +362,7 @@ function saveToFile(){
               text: cell.text
             });
           }
+
         });
       });
     });
@@ -386,7 +397,7 @@ function saveToFile(){
       let writeIndex = 15;
       summaryRows.forEach(row => {
         if(writeIndex < 0) return;
-        tasks[writeIndex].weeklyObjectives = { text: row.text, completed: false, ranking: writeIndex+1 };
+        tasks[writeIndex].weeklyObjectives = { text: row.text, status: 0, ranking: writeIndex+1 };
         writeIndex--;
       });
       return { ...w, tasks };
@@ -466,7 +477,7 @@ function saveToFile(){
     borderLeft: todayColIndex===0 ? '3px solid #2563eb' : '0',
     borderRight: todayColIndex===0 ? '3px solid #2563eb' : '0',
     whiteSpace: 'nowrap',
-    width: '70px'   // 🔹 narrower column
+    width: '85px'   // 🔹 narrower column
   }}
 >
   W-
@@ -521,30 +532,32 @@ function saveToFile(){
                           const cellBorderRight = isToday ? '3px solid #2563eb' : '0';
 
                           return (
- <td
+<td
   key={col}
   onDragOver={(e)=>e.preventDefault()}
   onDrop={(e)=>handleDrop(e,week.id,rowIndex,col)}
   style={{
-    backgroundColor: style.bg,   // background same as cell
+    backgroundColor: style.bg,
     color: style.text==='white' ? '#fff' : '#000',
     padding:'6px',
     borderLeft: cellBorderLeft,
     borderRight: cellBorderRight,
-    verticalAlign:'top'
+    verticalAlign:'top',
+    width: col === "delegatedTasks" ? "85px" : "auto"   // widen first col
   }}
 >
   <div style={{ display:'flex', alignItems:'flex-start', gap:4 }}>
-    {/* Control stack: number + checkbox */}
+    {/* Control stack: number + status box */}
     <div style={{
       width: 20,
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'flex-start',
-      gap: 2,
-      opacity: style.ghost ? 0.4 : 1   // gray out if no text
+      gap: 4,
+      opacity: style.ghost ? 0.4 : 1
     }}>
+      {/* Ranking number */}
       <input
         type="number"
         min="1"
@@ -569,12 +582,25 @@ function saveToFile(){
           cursor: 'grab'
         }}
       />
-      <input
-        type="checkbox"
-        checked={task[col].completed}
-        onChange={(e)=>updateTask(week.id,rowIndex,col,'completed',e.target.checked)}
-        style={{ width:14, height:14, margin:0, padding:0 }}
-      />
+
+      {/* 3-state status box */}
+      <div
+        onClick={() => {
+          const nextStatus = ((task[col].status ?? 0) + 1) % 3; // 0→1→2→0
+          updateTask(week.id, rowIndex, col, 'status', nextStatus);
+        }}
+        style={{
+          width: 14,
+          height: 14,
+          borderRadius: 3,
+          border: "1px solid #ccc",
+          background:
+            task[col].status === 0 ? "#fff" :
+            task[col].status === 1 ? "#f97316" : // orange
+            "#22c55e", // green
+          cursor: "pointer"
+        }}
+      ></div>
     </div>
 
     {/* Textarea fills rest */}
@@ -594,7 +620,8 @@ function saveToFile(){
           resize:'none',
           overflow:'hidden',
           background:'transparent',
-          color: style.text,
+          color: task[col].status === 2 ? "#6b7280" : style.text, // grey if completed
+          textDecoration: task[col].status === 2 ? "line-through" : "none",
           border:'none',
           outline:'none',
           fontSize:12,
