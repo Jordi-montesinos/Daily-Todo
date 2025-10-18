@@ -201,24 +201,38 @@ function handleDrop(e, weekId, targetRow, col){
     if(w.id !== weekId) return w;
     let tasks = [...w.tasks];
 
-    // Get dragged and target cells
-    const draggedCell = tasks[draggedItem.rowIndex][col];
-    const targetCell = tasks[targetRow][col];
+    // take dragged task out
+    const draggedTask = tasks[draggedItem.rowIndex][col];
 
-    // Swap them
+    // remove from original row
     tasks[draggedItem.rowIndex] = {
       ...tasks[draggedItem.rowIndex],
-      [col]: targetCell
-    };
-    tasks[targetRow] = {
-      ...tasks[targetRow],
-      [col]: draggedCell
+      [col]: { text:"", completed:false, ranking: draggedItem.rowIndex+1 }
     };
 
-    // Renumber this column after swap
-    tasks = tasks.map((t, i) => ({
+    // shift tasks and insert at new row
+    if(draggedItem.rowIndex < targetRow){
+      // moving down
+      for(let i=draggedItem.rowIndex; i<targetRow; i++){
+        tasks[i][col] = { ...tasks[i+1][col], ranking: i+1 };
+      }
+    } else if(draggedItem.rowIndex > targetRow){
+      // moving up
+      for(let i=draggedItem.rowIndex; i>targetRow; i--){
+        tasks[i][col] = { ...tasks[i-1][col], ranking: i+1 };
+      }
+    }
+
+    // place dragged item
+    tasks[targetRow] = { 
+      ...tasks[targetRow], 
+      [col]: { ...draggedTask, ranking: targetRow+1 } 
+    };
+
+    // renumber rankings for consistency
+    tasks = tasks.map((t,i)=>({
       ...t,
-      [col]: { ...t[col], ranking: i + 1 }
+      [col]: { ...t[col], ranking:i+1 }
     }));
 
     return { ...w, tasks };
