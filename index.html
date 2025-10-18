@@ -60,13 +60,13 @@ function formatDayShort(d) {
 /* ---------- tasks/week defaults ---------- */
 function makeEmptyTasks() {
   return Array(16).fill(null).map((_, i) => ({
-    delegatedTasks:   { text: "", status: 0, ranking: i+1 },
-    weeklyObjectives: { text: "", status: 0, ranking: i+1 },
-    monday:           { text: "", status: 0, ranking: i+1 },
-    tuesday:          { text: "", status: 0, ranking: i+1 },
-    wednesday:        { text: "", status: 0, ranking: i+1 },
-    thursday:         { text: "", status: 0, ranking: i+1 },
-    friday:           { text: "", status: 0, ranking: i+1 }
+delegatedTasks:   { text: "", status: 0, ranking: i+1 },
+weeklyObjectives: { text: "", status: 0, ranking: i+1 },
+monday:           { text: "", status: 0, ranking: i+1 },
+tuesday:          { text: "", status: 0, ranking: i+1 },
+wednesday:        { text: "", status: 0, ranking: i+1 },
+thursday:         { text: "", status: 0, ranking: i+1 },
+friday:           { text: "", status: 0, ranking: i+1 }
   }));
 }
 
