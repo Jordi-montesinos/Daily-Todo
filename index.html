@@ -78,18 +78,33 @@ const [currentWeek, currentYear] = getISOWeekAndYear(new Date());
  **********************/
 function WeeklyTaskOrganizer() {
   // initialize from localStorage or default single week
-  const initial = () => {
-    const saved = localStorage.getItem('weekly-task-organizer');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return [{
-      id: Date.now(),
-      weekNumber: currentWeek,
-      year: currentYear,
-      tasks: makeEmptyTasks()
-    }];
-  };
+const initial = () => {
+  const saved = localStorage.getItem('weekly-task-organizer');
+  if (saved) {
+    try { 
+      let parsed = JSON.parse(saved);
+      // migrate old completed → status
+      parsed.forEach(week => {
+        week.tasks.forEach(row => {
+          Object.keys(row).forEach(col => {
+            if (row[col].status === undefined) {
+              row[col].status = row[col].completed ? 2 : 0;
+              delete row[col].completed;
+            }
+          });
+        });
+      });
+      return parsed;
+    } catch {}
+  }
+  return [{
+    id: Date.now(),
+    weekNumber: currentWeek,
+    year: currentYear,
+    tasks: makeEmptyTasks()
+  }];
+};
+
 
   const [weeks, setWeeks] = useState(initial);
   const [activeTab, setActiveTab] = useState('organizer'); // 'organizer' | 'summary'
