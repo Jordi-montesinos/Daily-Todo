@@ -552,18 +552,33 @@ function saveToFile(){
                           return (
 <td
   key={col}
-  onDragOver={(e)=>e.preventDefault()}
-  onDrop={(e)=>handleDrop(e,week.id,rowIndex,col)}
+  onDragOver={(e) => {
+    e.preventDefault();
+    setDragOverRow({ weekId: week.id, rowIndex, col });
+  }}
+  onDragLeave={() => setDragOverRow(null)}
+  onDrop={(e) => {
+    handleDrop(e, week.id, rowIndex, col);
+    setDragOverRow(null);
+  }}
   style={{
     backgroundColor: style.bg,
-    color: style.text==='white' ? '#fff' : '#000',
-    padding:'6px',
     borderLeft: cellBorderLeft,
     borderRight: cellBorderRight,
     verticalAlign:'top',
-    width: col === "delegatedTasks" ? "85px" : "auto"   // widen first col
+    padding:'6px',
+    width: col === "delegatedTasks" ? "85px" : "auto",
+    // 🔹 Highlight border when hovered
+    outline: dragOverRow && 
+             dragOverRow.weekId === week.id && 
+             dragOverRow.rowIndex === rowIndex && 
+             dragOverRow.col === col 
+             ? "2px dashed #2563eb" 
+             : "none",
+    outlineOffset: -2
   }}
 >
+
   <div style={{ display:'flex', alignItems:'flex-start', gap:4 }}>
     {/* Control stack: number + status box */}
     <div style={{
