@@ -248,31 +248,27 @@ function handleDrop(e, weekId, targetRow, targetCol) {
       if (!draggedTask.text.trim()) return w;
 
       if (isCopy) {
-        // ✅ Duplicate task into target cell
-        tasks[targetRow] = {
-          ...tasks[targetRow],
-          [targetCol]: { ...draggedTask, ranking: targetRow + 1 }
-        };
+        // ✅ DUPLICATE: insert copy, shift tasks down
+        for (let i = tasks.length - 1; i > targetRow; i--) {
+          tasks[i][targetCol] = { ...tasks[i - 1][targetCol], ranking: i + 1 };
+        }
+        tasks[targetRow][targetCol] = { ...draggedTask, ranking: targetRow + 1 };
       } else {
-        // ✅ Move task into target cell
-        // clear source
-        tasks[sourceRow] = {
-          ...tasks[sourceRow],
-          [sourceCol]: { text: "", status: 0, ranking: sourceRow + 1 }
-        };
+        // ✅ MOVE: clear source, shift tasks in targetCol down, insert dragged
+        tasks[sourceRow][sourceCol] = { text: "", status: 0, ranking: sourceRow + 1 };
 
-        // put dragged into target
-        tasks[targetRow] = {
-          ...tasks[targetRow],
-          [targetCol]: { ...draggedTask, ranking: targetRow + 1 }
-        };
+        for (let i = tasks.length - 1; i > targetRow; i--) {
+          tasks[i][targetCol] = { ...tasks[i - 1][targetCol], ranking: i + 1 };
+        }
+        tasks[targetRow][targetCol] = { ...draggedTask, ranking: targetRow + 1 };
       }
 
-      // Re-sort both affected columns
-      tasks = sortColumnByCategory(tasks, sourceCol);
-      if (targetCol !== sourceCol) {
-        tasks = sortColumnByCategory(tasks, targetCol);
-      }
+      // Re-rank everything in both affected columns
+      tasks = tasks.map((t, i) => ({
+        ...t,
+        [sourceCol]: { ...t[sourceCol], ranking: i + 1 },
+        [targetCol]: { ...t[targetCol], ranking: i + 1 }
+      }));
 
       return { ...w, tasks };
     })
@@ -280,6 +276,7 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
   setDraggedItem(null);
 }
+
 
 
   /* keyboard nav + alt+enter fix */
