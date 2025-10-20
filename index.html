@@ -213,53 +213,56 @@ useEffect(() => {
 }, [weeks]);
 
 /* drag/drop */
-function handleDrop(e, weekId, targetRow, col){
+function handleDrop(e, weekId, targetRow, targetCol) {
   e.preventDefault();
-  if(!draggedItem || draggedItem.weekId !== weekId || draggedItem.col !== col){
+  if (!draggedItem || draggedItem.weekId !== weekId) {
     setDraggedItem(null);
     return;
   }
 
-  setWeeks(prev => prev.map(w => {
-    if(w.id !== weekId) return w;
-    let tasks = [...w.tasks];
+  const isCopy = e.ctrlKey; // CTRL = duplicate instead of move
 
-    // take dragged task out
-    const draggedTask = tasks[draggedItem.rowIndex][col];
+  setWeeks(prev =>
+    prev.map(w => {
+      if (w.id !== weekId) return w;
+      let tasks = [...w.tasks];
 
-    // remove from original row
-    tasks[draggedItem.rowIndex] = {
-      ...tasks[draggedItem.rowIndex],
-        [col]: { text:"", status:0, ranking: draggedItem.rowIndex+1 }
-    };
+      const sourceCol = draggedItem.col;
+      const sourceRow = draggedItem.rowIndex;
+      const draggedTask = tasks[sourceRow][sourceCol];
 
-    // shift tasks and insert at new row
-    if(draggedItem.rowIndex < targetRow){
-      // moving down
-      for(let i=draggedItem.rowIndex; i<targetRow; i++){
-        tasks[i][col] = { ...tasks[i+1][col], ranking: i+1 };
+      if (!draggedTask.text.trim()) return w;
+
+      if (isCopy) {
+        // ✅ Duplicate task into target cell
+        tasks[targetRow] = {
+          ...tasks[targetRow],
+          [targetCol]: { ...draggedTask, ranking: targetRow + 1 }
+        };
+      } else {
+        // ✅ Move task into target cell
+        // clear source
+        tasks[sourceRow] = {
+          ...tasks[sourceRow],
+          [sourceCol]: { text: "", status: 0, ranking: sourceRow + 1 }
+        };
+
+        // put dragged into target
+        tasks[targetRow] = {
+          ...tasks[targetRow],
+          [targetCol]: { ...draggedTask, ranking: targetRow + 1 }
+        };
       }
-    } else if(draggedItem.rowIndex > targetRow){
-      // moving up
-      for(let i=draggedItem.rowIndex; i>targetRow; i--){
-        tasks[i][col] = { ...tasks[i-1][col], ranking: i+1 };
+
+      // Re-sort both affected columns
+      tasks = sortColumnByCategory(tasks, sourceCol);
+      if (targetCol !== sourceCol) {
+        tasks = sortColumnByCategory(tasks, targetCol);
       }
-    }
 
-    // place dragged item
-    tasks[targetRow] = { 
-      ...tasks[targetRow], 
-      [col]: { ...draggedTask, ranking: targetRow+1 } 
-    };
-
-    // renumber rankings for consistency
-    tasks = tasks.map((t,i)=>({
-      ...t,
-      [col]: { ...t[col], ranking:i+1 }
-    }));
-
-    return { ...w, tasks };
-  }));
+      return { ...w, tasks };
+    })
+  );
 
   setDraggedItem(null);
 }
