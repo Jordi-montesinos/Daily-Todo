@@ -250,24 +250,42 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
       if (!draggedTask.text.trim()) return w; // nothing to move
 
-      if (!isCopy) {
-        // clear source
-        tasks[sourceRow] = {
-          ...tasks[sourceRow],
-          [sourceCol]: { text: "", status: 0, ranking: sourceRow + 1 }
+      // ✅ CASE 1: same column = reorder
+      if (sourceCol === targetCol) {
+        const colTasks = tasks.map((t, i) => ({ ...t[sourceCol], rowIndex: i }));
+
+        // remove dragged
+        const withoutDragged = colTasks.filter(t => t.rowIndex !== sourceRow);
+
+        // insert at new index
+        withoutDragged.splice(targetRow, 0, draggedTask);
+
+        // rewrite back into table
+        withoutDragged.forEach((cell, i) => {
+          tasks[i] = { ...tasks[i], [sourceCol]: { ...cell, ranking: i + 1 } };
+        });
+
+      } else {
+        // ✅ CASE 2: different column
+        if (!isCopy) {
+          // clear source
+          tasks[sourceRow] = {
+            ...tasks[sourceRow],
+            [sourceCol]: { text: "", status: 0, ranking: sourceRow + 1 }
+          };
+        }
+
+        // put dragged into target (overwrite if needed)
+        tasks[targetRow] = {
+          ...tasks[targetRow],
+          [targetCol]: { ...draggedTask, ranking: targetRow + 1 }
         };
-      }
 
-      // put dragged into target
-      tasks[targetRow] = {
-        ...tasks[targetRow],
-        [targetCol]: { ...draggedTask }
-      };
-
-      // Compact both columns so gaps disappear
-      tasks = sortColumnByCategory(tasks, sourceCol);
-      if (targetCol !== sourceCol) {
-        tasks = sortColumnByCategory(tasks, targetCol);
+        // re-sort both columns
+        tasks = sortColumnByCategory(tasks, sourceCol);
+        if (targetCol !== sourceCol) {
+          tasks = sortColumnByCategory(tasks, targetCol);
+        }
       }
 
       return { ...w, tasks };
