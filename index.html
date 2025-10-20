@@ -250,42 +250,39 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
       if (!draggedTask.text.trim()) return w; // nothing to move
 
-      // ✅ CASE 1: same column = reorder
       if (sourceCol === targetCol) {
+        // ✅ CASE 1: same column (reorder)
         const colTasks = tasks.map((t, i) => ({ ...t[sourceCol], rowIndex: i }));
-
-        // remove dragged
         const withoutDragged = colTasks.filter(t => t.rowIndex !== sourceRow);
-
-        // insert at new index
         withoutDragged.splice(targetRow, 0, draggedTask);
-
-        // rewrite back into table
         withoutDragged.forEach((cell, i) => {
           tasks[i] = { ...tasks[i], [sourceCol]: { ...cell, ranking: i + 1 } };
         });
-
       } else {
-        // ✅ CASE 2: different column
+        // ✅ CASE 2: cross column (insert, don’t overwrite)
         if (!isCopy) {
-          // clear source
           tasks[sourceRow] = {
             ...tasks[sourceRow],
             [sourceCol]: { text: "", status: 0, ranking: sourceRow + 1 }
           };
         }
 
-        // put dragged into target (overwrite if needed)
-        tasks[targetRow] = {
-          ...tasks[targetRow],
-          [targetCol]: { ...draggedTask, ranking: targetRow + 1 }
-        };
+        // take all tasks from target column
+        const targetColTasks = tasks.map((t, i) => ({ ...t[targetCol], rowIndex: i }));
 
-        // re-sort both columns
+        // insert dragged at target position
+        targetColTasks.splice(targetRow, 0, draggedTask);
+
+        // trim to max 16 rows
+        const trimmed = targetColTasks.slice(0, 16);
+
+        // rewrite back with correct rankings
+        trimmed.forEach((cell, i) => {
+          tasks[i] = { ...tasks[i], [targetCol]: { ...cell, ranking: i + 1 } };
+        });
+
+        // also normalize source column
         tasks = sortColumnByCategory(tasks, sourceCol);
-        if (targetCol !== sourceCol) {
-          tasks = sortColumnByCategory(tasks, targetCol);
-        }
       }
 
       return { ...w, tasks };
@@ -294,6 +291,7 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
   setDraggedItem(null);
 }
+
 
 
   /* keyboard nav + alt+enter fix */
