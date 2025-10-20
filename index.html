@@ -250,40 +250,33 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
       if (!draggedTask.text.trim()) return w; // nothing to move
 
-      if (sourceCol === targetCol) {
-        // ✅ CASE 1: same column (reorder)
-        const colTasks = tasks.map((t, i) => ({ ...t[sourceCol], rowIndex: i }));
-        const withoutDragged = colTasks.filter(t => t.rowIndex !== sourceRow);
-        withoutDragged.splice(targetRow, 0, draggedTask);
-        withoutDragged.forEach((cell, i) => {
-          tasks[i] = { ...tasks[i], [sourceCol]: { ...cell, ranking: i + 1 } };
-        });
-      } else {
-        // ✅ CASE 2: cross column (insert, don’t overwrite)
-        if (!isCopy) {
-          tasks[sourceRow] = {
-            ...tasks[sourceRow],
-            [sourceCol]: { text: "", status: 0, ranking: sourceRow + 1 }
-          };
-        }
-
-        // take all tasks from target column
-        const targetColTasks = tasks.map((t, i) => ({ ...t[targetCol], rowIndex: i }));
-
-        // insert dragged at target position
-        targetColTasks.splice(targetRow, 0, draggedTask);
-
-        // trim to max 16 rows
-        const trimmed = targetColTasks.slice(0, 16);
-
-        // rewrite back with correct rankings
-        trimmed.forEach((cell, i) => {
-          tasks[i] = { ...tasks[i], [targetCol]: { ...cell, ranking: i + 1 } };
-        });
-
-        // also normalize source column
-        tasks = sortColumnByCategory(tasks, sourceCol);
+      // clear source if it's a move
+      if (!isCopy) {
+        tasks[sourceRow] = {
+          ...tasks[sourceRow],
+          [sourceCol]: { text: "", status: 0, ranking: sourceRow + 1 }
+        };
       }
+
+      // build new target column values
+      const colTasks = tasks.map((t, i) => ({ ...t[targetCol], rowIndex: i }));
+
+      // shift down everything from targetRow to bottom
+      for (let i = colTasks.length - 1; i > targetRow; i--) {
+        colTasks[i] = { ...colTasks[i - 1], ranking: i + 1 };
+      }
+
+      // insert dragged at targetRow
+      colTasks[targetRow] = { ...draggedTask, ranking: targetRow + 1 };
+
+      // rewrite back into tasks
+      colTasks.forEach((cell, i) => {
+        tasks[i] = { ...tasks[i], [targetCol]: cell };
+      });
+
+      // normalize both columns
+      tasks = sortColumnByCategory(tasks, sourceCol);
+      tasks = sortColumnByCategory(tasks, targetCol);
 
       return { ...w, tasks };
     })
@@ -291,6 +284,7 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
   setDraggedItem(null);
 }
+
 
 
 
