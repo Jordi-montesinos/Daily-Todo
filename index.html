@@ -112,6 +112,8 @@ const initial = () => {
   const inputRefs = useRef({});
   const fileInputRef = useRef(null);
   const [copiedKeys, setCopiedKeys] = useState(()=> new Set());
+  const [dragOverRow, setDragOverRow] = useState(null);
+
 
   const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
 
