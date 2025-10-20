@@ -175,25 +175,28 @@ function sortColumnByCategory(tasks, col) {
     getCategoryRange(col,12)
   ];
 
-  ranges.forEach(([start,end])=>{
+  ranges.forEach(([start,end]) => {
     const seg = [];
-    for(let i=start;i<=end;i++) seg.push({ task:newTasks[i][col], rowIndex:i });
+    for (let i = start; i <= end; i++) {
+      seg.push({ task: newTasks[i][col], rowIndex: i });
+    }
 
-    const active   = seg.filter(s => s.task.status !== 2)
-                        .sort((a,b)=>a.task.ranking-b.task.ranking);
-    const complete = seg.filter(s => s.task.status === 2)
-                        .sort((a,b)=>a.task.ranking-b.task.ranking);
+    const filled   = seg.filter(s => s.task.text.trim() !== "" && s.task.status !== 2);
+    const complete = seg.filter(s => s.task.text.trim() !== "" && s.task.status === 2);
+    const blanks   = seg.filter(s => s.task.text.trim() === "");
 
-    const merged = [...active, ...complete];
+    // keep incomplete first, then completed, then blanks
+    const merged = [...filled, ...complete, ...blanks];
 
-    merged.forEach((it, idx)=>{
-      const normalized = { ...it.task, ranking: idx+1 };
+    merged.forEach((it, idx) => {
+      const normalized = { ...it.task, ranking: idx + 1 };
       newTasks[start + idx] = { ...newTasks[start + idx], [col]: normalized };
     });
   });
 
   return newTasks;
 }
+
 
 
   function updateTask(weekId, rowIndex, col, field, value){
@@ -247,28 +250,21 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
       if (!draggedTask.text.trim()) return w; // nothing to move
 
-      if (isCopy) {
-        // ✅ Duplicate into target
-        tasks[targetRow] = {
-          ...tasks[targetRow],
-          [targetCol]: { ...draggedTask, ranking: targetRow + 1 }
-        };
-      } else {
-        // ✅ Move task
+      if (!isCopy) {
         // clear source
         tasks[sourceRow] = {
           ...tasks[sourceRow],
           [sourceCol]: { text: "", status: 0, ranking: sourceRow + 1 }
         };
-
-        // place in target
-        tasks[targetRow] = {
-          ...tasks[targetRow],
-          [targetCol]: { ...draggedTask, ranking: targetRow + 1 }
-        };
       }
 
-      // Always compact both source and target columns
+      // put dragged into target
+      tasks[targetRow] = {
+        ...tasks[targetRow],
+        [targetCol]: { ...draggedTask }
+      };
+
+      // Compact both columns so gaps disappear
       tasks = sortColumnByCategory(tasks, sourceCol);
       if (targetCol !== sourceCol) {
         tasks = sortColumnByCategory(tasks, targetCol);
@@ -280,6 +276,7 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
   setDraggedItem(null);
 }
+
 
   /* keyboard nav + alt+enter fix */
   function focusCell(weekId, row, col){
