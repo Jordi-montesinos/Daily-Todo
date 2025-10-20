@@ -234,7 +234,7 @@ function handleDrop(e, weekId, targetRow, targetCol) {
     return;
   }
 
-  const isCopy = e.ctrlKey; // CTRL = duplicate instead of move
+  const isCopy = e.ctrlKey;
 
   setWeeks(prev =>
     prev.map(w => {
@@ -247,28 +247,33 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
       if (!draggedTask.text.trim()) return w;
 
-      if (isCopy) {
-        // ✅ DUPLICATE: insert copy, shift tasks down
-        for (let i = tasks.length - 1; i > targetRow; i--) {
-          tasks[i][targetCol] = { ...tasks[i - 1][targetCol], ranking: i + 1 };
-        }
-        tasks[targetRow][targetCol] = { ...draggedTask, ranking: targetRow + 1 };
-      } else {
-        // ✅ MOVE: clear source, shift tasks in targetCol down, insert dragged
-        tasks[sourceRow][sourceCol] = { text: "", status: 0, ranking: sourceRow + 1 };
+      // ✅ Step 1: extract task list for source & target columns
+      const extractCol = col =>
+        tasks.map((row, i) => ({ ...row[col], rowIndex: i }))
+             .filter(cell => cell.text && cell.text.trim());
 
-        for (let i = tasks.length - 1; i > targetRow; i--) {
-          tasks[i][targetCol] = { ...tasks[i - 1][targetCol], ranking: i + 1 };
-        }
-        tasks[targetRow][targetCol] = { ...draggedTask, ranking: targetRow + 1 };
+      let sourceList = extractCol(sourceCol);
+      let targetList = extractCol(targetCol);
+
+      // ✅ Step 2: remove dragged from sourceList (if move)
+      if (!isCopy) {
+        sourceList = sourceList.filter(cell => !(cell.rowIndex === sourceRow && sourceCol === targetCol));
       }
 
-      // Re-rank everything in both affected columns
-      tasks = tasks.map((t, i) => ({
-        ...t,
-        [sourceCol]: { ...t[sourceCol], ranking: i + 1 },
-        [targetCol]: { ...t[targetCol], ranking: i + 1 }
-      }));
+      // ✅ Step 3: insert into targetList at correct index
+      const insertIndex = targetRow;
+      targetList.splice(insertIndex, 0, { ...draggedTask });
+
+      // ✅ Step 4: rebuild both columns compacted + renumbered
+      tasks.forEach((row, i) => {
+        tasks[i][sourceCol] = sourceList[i]
+          ? { ...sourceList[i], ranking: i + 1 }
+          : { text: "", status: 0, ranking: i + 1 };
+
+        tasks[i][targetCol] = targetList[i]
+          ? { ...targetList[i], ranking: i + 1 }
+          : { text: "", status: 0, ranking: i + 1 };
+      });
 
       return { ...w, tasks };
     })
@@ -276,9 +281,6 @@ function handleDrop(e, weekId, targetRow, targetCol) {
 
   setDraggedItem(null);
 }
-
-
-
   /* keyboard nav + alt+enter fix */
   function focusCell(weekId, row, col){
     if(row < 0 || col < 0 || col >= columns.length || row >= 16) return;
