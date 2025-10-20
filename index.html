@@ -109,10 +109,11 @@ const initial = () => {
   const [weeks, setWeeks] = useState(initial);
   const [activeTab, setActiveTab] = useState('organizer'); // 'organizer' | 'summary'
   const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverRow, setDragOverRow] = useState(null);   // 🔹 NEW
   const inputRefs = useRef({});
   const fileInputRef = useRef(null);
   const [copiedKeys, setCopiedKeys] = useState(()=> new Set());
-  const [dragOverRow, setDragOverRow] = useState(null);
+
 
 
   const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
@@ -213,6 +214,17 @@ useEffect(() => {
     }
   });
 }, [weeks]);
+  // 🔹 Reset highlight if drag ends outside a cell
+  useEffect(() => {
+    const onDropAnywhere = () => setDragOverRow(null);
+    const onDragEnd = () => setDragOverRow(null);
+    window.addEventListener('drop', onDropAnywhere);
+    window.addEventListener('dragend', onDragEnd);
+    return () => {
+      window.removeEventListener('drop', onDropAnywhere);
+      window.removeEventListener('dragend', onDragEnd);
+    };
+  }, []);
 
 /* drag/drop */
 function handleDrop(e, weekId, targetRow, targetCol) {
