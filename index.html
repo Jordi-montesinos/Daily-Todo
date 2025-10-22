@@ -199,15 +199,24 @@ function sortColumnByCategory(tasks, col) {
 
 
 
-  function updateTask(weekId, rowIndex, col, field, value){
-    setWeeks(prev => prev.map(w => {
-      if(w.id !== weekId) return w;
-      let newTasks = [...w.tasks];
-      newTasks[rowIndex] = { ...newTasks[rowIndex], [col]: { ...newTasks[rowIndex][col], [field]: value } };
+function updateTask(weekId, rowIndex, col, field, value) {
+  setWeeks(prev => prev.map(w => {
+    if (w.id !== weekId) return w;
+    let newTasks = [...w.tasks];
+    newTasks[rowIndex] = {
+      ...newTasks[rowIndex],
+      [col]: { ...newTasks[rowIndex][col], [field]: value }
+    };
+
+    // only sort if NOT typing text
+    if (field !== "text") {
       newTasks = sortColumnByCategory(newTasks, col);
-      return { ...w, tasks: newTasks };
-    }));
-  }
+    }
+
+    return { ...w, tasks: newTasks };
+  }));
+}
+
 /* Auto-resize all textareas on load/refresh */
 useEffect(() => {
   Object.values(inputRefs.current).forEach(el => {
