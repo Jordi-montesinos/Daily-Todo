@@ -208,7 +208,7 @@ function updateTask(weekId, rowIndex, col, field, value) {
       [col]: { ...newTasks[rowIndex][col], [field]: value }
     };
 
-    // only sort if NOT typing text
+    // only auto-sort if not typing text
     if (field !== "text") {
       newTasks = sortColumnByCategory(newTasks, col);
     }
@@ -216,7 +216,6 @@ function updateTask(weekId, rowIndex, col, field, value) {
     return { ...w, tasks: newTasks };
   }));
 }
-
 /* Auto-resize all textareas on load/refresh */
 useEffect(() => {
   Object.values(inputRefs.current).forEach(el => {
@@ -304,21 +303,40 @@ function handleDrop(e, weekId, targetRow, targetCol) {
     const el = inputRefs.current[key];
     if(el) el.focus();
   }
-  function handleKeyDown(e, weekId, row, col){
-    if(e.key === 'Enter' && e.altKey){
-      e.preventDefault();
-      const el = e.target;
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      el.value = el.value.slice(0, start) + '\n' + el.value.slice(end);
-      el.selectionStart = el.selectionEnd = start + 1;
-      return;
-    }
-    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); focusCell(weekId, row+1, col); }
-    else if(e.key === 'Enter' && e.shiftKey){ e.preventDefault(); focusCell(weekId, row-1, col); }
-    else if(e.key === 'Tab' && !e.shiftKey){ e.preventDefault(); focusCell(weekId, row, col+1); }
-    else if(e.key === 'Tab' && e.shiftKey){ e.preventDefault(); focusCell(weekId, row, col-1); }
+ function handleKeyDown(e, weekId, row, col){
+  if(e.key === 'Enter' && !e.shiftKey && !e.altKey){
+    e.preventDefault();
+    // 🔹 force reorg before moving focus
+    setWeeks(prev => prev.map(w => {
+      if(w.id !== weekId) return w;
+      let newTasks = sortColumnByCategory([...w.tasks], columns[col]);
+      return { ...w, tasks: newTasks };
+    }));
+    // then move focus
+    focusCell(weekId, row+1, col);
   }
+  else if(e.key === 'Enter' && e.altKey){
+    e.preventDefault();
+    const el = e.target;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    el.value = el.value.slice(0, start) + '\n' + el.value.slice(end);
+    el.selectionStart = el.selectionEnd = start + 1;
+  }
+  else if(e.key === 'Enter' && e.shiftKey){
+    e.preventDefault();
+    focusCell(weekId, row-1, col);
+  }
+  else if(e.key === 'Tab' && !e.shiftKey){
+    e.preventDefault();
+    focusCell(weekId, row, col+1);
+  }
+  else if(e.key === 'Tab' && e.shiftKey){
+    e.preventDefault();
+    focusCell(weekId, row, col-1);
+  }
+}
+
 
   /* add new week */
   function addNewWeek(){
