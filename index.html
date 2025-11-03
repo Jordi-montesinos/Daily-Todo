@@ -536,7 +536,7 @@ function saveToFile(){
                     <tr>
                       {/* first header cell: week number inline + smaller font */}
                       <th
-  className="text-white text-center px-2 py-1 text-xs"
+  className="text-white text-center px-1 py-[2px] text-[10px]"
   style={{
     background: todayColIndex===0 ? '#3b82f6' : '#374151',
     borderLeft: todayColIndex===0 ? '3px solid #2563eb' : '0',
@@ -613,8 +613,8 @@ function saveToFile(){
     borderLeft: cellBorderLeft,
     borderRight: cellBorderRight,
     verticalAlign:'top',
-    padding:'6px',
-    width: col === "delegatedTasks" ? "85px" : "auto",
+    padding:'2px',
+    width: col === "delegatedTasks" ? "110px" : "auto",
     // 🔹 Highlight border when hovered
     outline: dragOverRow && 
              dragOverRow.weekId === week.id && 
@@ -628,13 +628,13 @@ function saveToFile(){
 
   <div style={{ display:'flex', alignItems:'flex-start', gap:4 }}>
     {/* Control stack: number + status box */}
-    <div style={{
-      width: 20,
+        <div style={{
+      width: 18,
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'flex-start',
-      gap: 4,
+      gap: 2,
       opacity: style.ghost ? 0.4 : 1
     }}>
       {/* Ranking number */}
@@ -649,11 +649,11 @@ function saveToFile(){
           parseInt(e.target.value)||1
         )}
         style={{
-          width: 18,
-          height: 16,
+          width: 16,
+          height: 14,
           textAlign: 'center',
-          fontSize: 10,
-          lineHeight: '16px',
+          fontSize: 9,
+          lineHeight: '14px',
           background: 'transparent',
           color: style.text,
           border: 'none',
@@ -700,8 +700,9 @@ function saveToFile(){
           resize:'none',
           overflow:'hidden',
           background:'transparent',
-          color: task[col].status === 2 ? "#6b7280" : style.text, // grey if completed
-          textDecoration: task[col].status === 2 ? "line-through" : "none",
+          color: task[col].status === 2
+            ? (style.bg.includes("#dc2626") || style.bg.includes("#f97316") ? "#fff" : "#6b7280") // white on red/orange
+            : style.text,          textDecoration: task[col].status === 2 ? "line-through" : "none",
           border:'none',
           outline:'none',
           fontSize:12,
