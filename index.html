@@ -1,149 +1,136 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Weekly Task Organizer</title>
 
-  <!-- React -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- React + Babel -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-    body { margin:0 }
-    td, th { vertical-align: top; }
-    textarea { line-height: 1.2rem; }
+    body { margin: 0; }
+    table td, table th { vertical-align: top; }
     /* hide default number input spinners */
     input[type=number]::-webkit-outer-spin-button,
     input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
+
+    /* keep your multiline feel */
+    textarea { line-height: 1.2rem; }
+
+    /* make first column less tiny on big screens */
+    .first-col { width: 160px; min-width: 160px; }
+    @media (min-width: 1536px) {
+      .first-col { width: 200px; min-width: 200px; }
+    }
   </style>
 </head>
 
-<body class="bg-gray-100">
-<div id="root"></div>
+<body class="bg-gray-100 min-h-screen">
+  <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useMemo, useRef } = React;
+const { useState, useEffect, useRef, useMemo } = React;
 
-/* ---------- helpers ---------- */
-function getISOWeek(date){
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
-  const y = d.getUTCFullYear();
-  const w = Math.ceil((((d - new Date(Date.UTC(y,0,1))) / 86400000) + 1) / 7);
-  return [w,y];
+/* ---------- ISO week helpers ---------- */
+function getISOWeekAndYear(date) {
+  const tmp = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+  return [weekNo, tmp.getUTCFullYear()];
+}
+function getDateOfISOWeek(week, year) {
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - (jan4Day - 1) + (week - 1) * 7);
+  return new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
+}
+function formatDayShort(d) {
+  const dd = String(d.getDate()).padStart(2,'0');
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return dd + '/' + monthNames[d.getMonth()];
 }
 
-function extractCategory(text){
-  const t = (text || "").trim();
-  if(!t) return "Other";
-  const m = t.match(/^(.+?)\s*-\s*/);
-  return m ? m[1].trim() : "Other";
-}
-
-function clampStatus(s){
-  const n = Number(s);
-  return (n===0 || n===1 || n===2) ? n : 0;
-}
-
-function isBlankText(t){
-  return !t || !t.trim();
-}
-
-/* Per-cell: keep subStatuses aligned with lines (excluding first line).
-   No text duplication: textarea remains the source of truth. */
-function syncSubStatuses(cell){
-  const text = (cell.text || "");
-  const lines = text.split("\n"); // keep empty lines while editing
-  const subLineCount = Math.max(0, lines.length - 1);
-
-  const prev = Array.isArray(cell.subStatuses) ? cell.subStatuses.map(clampStatus) : [];
-  const next = [];
-  for(let i=0;i<subLineCount;i++){
-    next.push(prev[i] ?? 0);
-  }
-  return { ...cell, subStatuses: next };
-}
-
-/* ---------- defaults ---------- */
-function makeEmptyTasks(){
-  return Array.from({length:16}, (_,i)=>( {
-    delegatedTasks:{text:"",status:0,ranking:i+1, subStatuses:[]},
-    weeklyObjectives:{text:"",status:0,ranking:i+1, subStatuses:[]},
-    monday:{text:"",status:0,ranking:i+1, subStatuses:[]},
-    tuesday:{text:"",status:0,ranking:i+1, subStatuses:[]},
-    wednesday:{text:"",status:0,ranking:i+1, subStatuses:[]},
-    thursday:{text:"",status:0,ranking:i+1, subStatuses:[]},
-    friday:{text:"",status:0,ranking:i+1, subStatuses:[]}
+/* ---------- tasks/week defaults ---------- */
+function makeEmptyTasks() {
+  return Array(16).fill(null).map((_, i) => ({
+    delegatedTasks:   { text: "", status: 0, ranking: i+1, lineStatuses: [] },
+    weeklyObjectives: { text: "", status: 0, ranking: i+1, lineStatuses: [] },
+    monday:           { text: "", status: 0, ranking: i+1, lineStatuses: [] },
+    tuesday:          { text: "", status: 0, ranking: i+1, lineStatuses: [] },
+    wednesday:        { text: "", status: 0, ranking: i+1, lineStatuses: [] },
+    thursday:         { text: "", status: 0, ranking: i+1, lineStatuses: [] },
+    friday:           { text: "", status: 0, ranking: i+1, lineStatuses: [] }
   }));
 }
 
-/* ---------- chart label plugin (integer labels on line points) ---------- */
-const LinePointLabelPlugin = {
-  id: 'linePointLabels',
-  afterDatasetsDraw(chart, args, pluginOptions){
-    const { ctx } = chart;
-    const opts = pluginOptions || {};
-    const datasetIndex = opts.datasetIndex ?? 0;
-    const color = opts.color ?? '#111827';
-    const fontSize = opts.fontSize ?? 11;
+/* compute current week/year for defaults */
+const [currentWeek, currentYear] = getISOWeekAndYear(new Date());
 
-    const meta = chart.getDatasetMeta(datasetIndex);
-    if(!meta || meta.hidden) return;
+/* ---------- small utilities ---------- */
+function safeLines(text){
+  const raw = (text ?? "").split("\n");
+  // keep empty lines (so Alt+Enter behaves like before), but avoid trailing nulls
+  return raw.length ? raw : [""];
+}
+function ensureLineStatuses(cell){
+  // lineStatuses corresponds to lines 2+ (index 1..)
+  const lines = safeLines(cell.text);
+  const need = Math.max(0, lines.length - 1);
+  const prev = Array.isArray(cell.lineStatuses) ? cell.lineStatuses : [];
+  if (prev.length === need) return cell;
+  const next = prev.slice(0, need);
+  while (next.length < need) next.push(0);
+  return { ...cell, lineStatuses: next };
+}
+function isBlankCell(cell){
+  return !cell || !cell.text || cell.text.trim() === "";
+}
 
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
+/* ---------- category parsing for analytics ---------- */
+function extractCategory(text){
+  // Format: "xxx xxx - yyy"
+  const m = (text || "").match(/^(.+?)\s-\s.+$/);
+  return m ? m[1].trim() : "(uncategorized)";
+}
+function weekKey(w){
+  return `${w.year}-W${String(w.weekNumber).padStart(2,"0")}`;
+}
 
-    meta.data.forEach((point, i) => {
-      const v = chart.data.datasets[datasetIndex].data[i];
-      if(v === null || v === undefined) return;
-      const x = point.x;
-      const y = point.y;
-      ctx.fillText(`${Math.round(v)}%`, x, y - 6);
-    });
+/**********************
+ * Main Component
+ **********************/
+function WeeklyTaskOrganizer() {
+  // initialize from localStorage or default single week
+  const initial = () => {
+    const saved = localStorage.getItem('weekly-task-organizer');
+    if (saved) {
+      try {
+        let parsed = JSON.parse(saved);
 
-    ctx.restore();
-  }
-};
-
-/* ---------- MAIN APP ---------- */
-function App(){
-  const [currentWeek, currentYear] = getISOWeek(new Date());
-
-  // storage
-  const STORAGE_KEY = "weekly-task-organizer";
-
-  const [weeks, setWeeks] = useState(()=>{
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if(saved){
-      try{
-        const parsed = JSON.parse(saved);
-
-        // migrate older shapes (completed -> status, ensure subStatuses exist)
-        parsed.forEach(w=>{
-          (w.tasks||[]).forEach(row=>{
-            Object.keys(row||{}).forEach(col=>{
+        // migrate old completed → status; ensure lineStatuses exists
+        parsed.forEach(week => {
+          week.tasks.forEach(row => {
+            Object.keys(row).forEach(col => {
               const cell = row[col];
-              if(!cell) return;
-              if(cell.status === undefined && cell.completed !== undefined){
+              if (!cell) return;
+              if (cell.status === undefined) {
                 cell.status = cell.completed ? 2 : 0;
                 delete cell.completed;
               }
-              cell.status = clampStatus(cell.status);
-              if(cell.ranking === undefined) cell.ranking = 1;
-              if(!Array.isArray(cell.subStatuses)) cell.subStatuses = [];
-              row[col] = syncSubStatuses(cell);
+              if (!Array.isArray(cell.lineStatuses)) cell.lineStatuses = [];
+              row[col] = ensureLineStatuses(cell);
             });
           });
         });
@@ -157,57 +144,19 @@ function App(){
       year: currentYear,
       tasks: makeEmptyTasks()
     }];
-  });
+  };
 
-  // autosave to localStorage (no file popup here)
-  useEffect(()=>{
-    try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(weeks));
-    } catch {}
-  }, [weeks]);
-
-  const [tab, setTab] = useState("organizer");
+  const [weeks, setWeeks] = useState(initial);
+  const [activeTab, setActiveTab] = useState('organizer'); // 'organizer' | 'analytics'
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverRow, setDragOverRow] = useState(null);
+  const inputRefs = useRef({});
+  const fileInputRef = useRef(null);
 
   const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
   const dayCols = ["monday","tuesday","wednesday","thursday","friday"];
 
-  // editing state: only used to render textarea vs "view mode"
-  const [editing, setEditing] = useState(null); // {weekId,row,col} or null
-  const isEditing = (weekId,row,col) =>
-    editing && editing.weekId===weekId && editing.row===row && editing.col===col;
-
-  function updateCell(weekId, rowIndex, col, patchFn){
-    setWeeks(ws=>ws.map(w=>{
-      if(w.id!==weekId) return w;
-      const tasks = [...w.tasks];
-      const cell = tasks[rowIndex][col];
-      const nextCell = patchFn(cell);
-      tasks[rowIndex] = { ...tasks[rowIndex], [col]: nextCell };
-      return { ...w, tasks };
-    }));
-  }
-
-  function cycleMainStatus(weekId,row,col){
-    updateCell(weekId,row,col,(cell)=>{
-      const next = { ...cell, status: (clampStatus(cell.status)+1)%3 };
-      return next;
-    });
-  }
-
-  function cycleSubStatus(weekId,row,col,subIdx){
-    updateCell(weekId,row,col,(cell)=>{
-      const subs = Array.isArray(cell.subStatuses) ? [...cell.subStatuses] : [];
-      subs[subIdx] = (clampStatus(subs[subIdx] ?? 0) + 1) % 3;
-      return { ...cell, subStatuses: subs };
-    });
-  }
-
-  // keep subStatuses aligned after editing (on blur)
-  function finalizeTextEdit(weekId,row,col){
-    updateCell(weekId,row,col,(cell)=>syncSubStatuses(cell));
-  }
-
-  // colors (minimal, keep your existing scheme idea; adjust if needed)
+  /* colors */
   function getWeeklyObjectivesColor(i){
     if(i<=3) return { bg:"#dc2626", text:"white" };
     if(i<=7) return { bg:"#f97316", text:"white" };
@@ -220,676 +169,980 @@ function App(){
     if(i>=14) return { bg:"#eff6ff", text:"black" };
     return { bg:"#ffffff", text:"black" };
   }
-  function getCellBaseStyle(col,rowIndex){
-    if(col === "weeklyObjectives") return getWeeklyObjectivesColor(rowIndex);
-    if(col === "delegatedTasks") return { bg:"#ffffff", text:"black" };
-    return getDayColumnColor(rowIndex);
-  }
+  function getCellStyle(col, rowIndex, text){
+    const base =
+      col === 'weeklyObjectives' ? getWeeklyObjectivesColor(rowIndex) :
+      col === 'delegatedTasks' ? { bg:"#ffffff", text:"black" } :
+      getDayColumnColor(rowIndex);
 
-  function buttonBg(status){
-    if(status===0) return "#fff";
-    if(status===1) return "#f97316";
-    return "#22c55e";
-  }
-
-  function mainTextColorForCompleted(baseBg){
-    // On red/orange backgrounds completed grey is unreadable -> force white.
-    const bg = (baseBg || "").toLowerCase();
-    if(bg.includes("#dc2626") || bg.includes("#f97316")) return "#fff";
-    return "#6b7280";
-  }
-
-  /* ---------- analytics model ---------- */
-  const analyticsModel = useMemo(()=>{
-    // Each "line" counts as an entry.
-    // First line uses cell.status; subsequent lines use cell.subStatuses[i-1].
-    // Monday–Friday only.
-    const weeksSorted = [...weeks].slice().sort((a,b)=>{
-      if(a.year!==b.year) return a.year-b.year;
-      return (a.weekNumber||0)-(b.weekNumber||0);
-    });
-
-    const rows = weeksSorted.map(w=>{
-      const cats = {}; // cat -> { open, done, total }
-      let total = 0;
-      let done = 0;
-      let open = 0;
-
-      (w.tasks||[]).forEach(r=>{
-        dayCols.forEach(col=>{
-          const cell = r[col];
-          if(!cell) return;
-          const text = cell.text || "";
-          if(isBlankText(text)) return;
-
-          const lines = text.split("\n");
-          // first line
-          const first = (lines[0] ?? "").trim();
-          if(first){
-            const cat = extractCategory(first);
-            cats[cat] = cats[cat] || { open:0, done:0, total:0 };
-            total++; cats[cat].total++;
-            if(clampStatus(cell.status)===2){ done++; cats[cat].done++; }
-            else { open++; cats[cat].open++; }
-          }
-          // sub lines
-          const subs = Array.isArray(cell.subStatuses) ? cell.subStatuses : [];
-          for(let i=1;i<lines.length;i++){
-            const line = (lines[i] ?? "").trim();
-            if(!line) continue;
-            const cat = extractCategory(line);
-            cats[cat] = cats[cat] || { open:0, done:0, total:0 };
-            total++; cats[cat].total++;
-            const st = clampStatus(subs[i-1] ?? 0);
-            if(st===2){ done++; cats[cat].done++; }
-            else { open++; cats[cat].open++; }
-          }
-        });
-      });
-
-      const completionPct = total ? (done/total)*100 : 0;
-
-      return {
-        key: `${w.year}-W${w.weekNumber}`,
-        year: w.year,
-        week: w.weekNumber,
-        label: `W${w.weekNumber}`,
-        cats,
-        total,
-        done,
-        open,
-        completionPct
+    if(!text || text.trim()===""){
+      return { 
+        bg: base.bg.includes("#") ? base.bg + "33" : "#f3f4f6",
+        text: "#9ca3af",
+        ghost: true
       };
+    }
+    return { ...base, ghost: false };
+  }
+
+  /* sorting + update logic */
+  function getCategoryRange(col, rowIndex){
+    if(col === 'weeklyObjectives'){
+      if(rowIndex <= 3) return [0,3];
+      if(rowIndex <= 7) return [4,7];
+      if(rowIndex <= 11) return [8,11];
+      return [12,15];
+    }
+    if(col === 'delegatedTasks') return [0,15];
+    if(rowIndex === 0) return [0,0];
+    if(rowIndex <= 3) return [1,3];
+    if(rowIndex <= 13) return [4,13];
+    return [14,15];
+  }
+
+  function sortColumnByCategory(tasks, col) {
+    const newTasks = [...tasks];
+
+    const ranges = [
+      getCategoryRange(col,0),
+      getCategoryRange(col,4),
+      getCategoryRange(col,8),
+      getCategoryRange(col,12)
+    ];
+
+    ranges.forEach(([start,end]) => {
+      const seg = [];
+      for (let i = start; i <= end; i++) {
+        seg.push({ task: newTasks[i][col], rowIndex: i });
+      }
+
+      const filled   = seg.filter(s => s.task.text.trim() !== "" && s.task.status !== 2);
+      const complete = seg.filter(s => s.task.text.trim() !== "" && s.task.status === 2);
+      const blanks   = seg.filter(s => s.task.text.trim() === "");
+
+      const merged = [...filled, ...complete, ...blanks];
+
+      merged.forEach((it, idx) => {
+        const normalized = ensureLineStatuses({ ...it.task, ranking: idx + 1 });
+        newTasks[start + idx] = { ...newTasks[start + idx], [col]: normalized };
+      });
     });
 
-    return rows;
+    return newTasks;
+  }
+
+  // IMPORTANT: keep text typing stable (no reorg while typing)
+  function updateTask(weekId, rowIndex, col, field, value) {
+    setWeeks(prev => prev.map(w => {
+      if (w.id !== weekId) return w;
+      let newTasks = [...w.tasks];
+
+      let nextCell = { ...newTasks[rowIndex][col], [field]: value };
+      nextCell = ensureLineStatuses(nextCell);
+
+      newTasks[rowIndex] = { ...newTasks[rowIndex], [col]: nextCell };
+
+      if (field !== "text") {
+        newTasks = sortColumnByCategory(newTasks, col);
+      }
+
+      return { ...w, tasks: newTasks };
+    }));
+  }
+
+  function toggleMainStatus(weekId, rowIndex, col){
+    const cell = weeks.find(w=>w.id===weekId)?.tasks?.[rowIndex]?.[col];
+    const cur = cell?.status ?? 0;
+    const next = (cur + 1) % 3;
+    updateTask(weekId, rowIndex, col, "status", next);
+  }
+
+  function toggleSubLineStatus(weekId, rowIndex, col, subIdx){
+    setWeeks(prev => prev.map(w => {
+      if (w.id !== weekId) return w;
+      const tasks = [...w.tasks];
+      let cell = ensureLineStatuses(tasks[rowIndex][col]);
+      const ls = [...cell.lineStatuses];
+      if (subIdx < 0 || subIdx >= ls.length) return w;
+      ls[subIdx] = (ls[subIdx] + 1) % 3;
+      cell = { ...cell, lineStatuses: ls };
+      tasks[rowIndex] = { ...tasks[rowIndex], [col]: cell };
+      return { ...w, tasks };
+    }));
+  }
+
+  /* Auto-resize all textareas on load/refresh */
+  useEffect(() => {
+    Object.values(inputRefs.current).forEach(el => {
+      if (el) {
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+      }
+    });
   }, [weeks]);
 
-  // Week range for analytics slicer
-  const weekKeys = analyticsModel.map(r=>r.key);
-  const [rangeFrom, setRangeFrom] = useState(()=>weekKeys[0] || "");
-  const [rangeTo, setRangeTo] = useState(()=>weekKeys[weekKeys.length-1] || "");
+  // reset highlight if drag ends outside a cell
+  useEffect(() => {
+    const onDropAnywhere = () => setDragOverRow(null);
+    const onDragEnd = () => setDragOverRow(null);
+    window.addEventListener('drop', onDropAnywhere);
+    window.addEventListener('dragend', onDragEnd);
+    return () => {
+      window.removeEventListener('drop', onDropAnywhere);
+      window.removeEventListener('dragend', onDragEnd);
+    };
+  }, []);
 
-  useEffect(()=>{
-    // keep valid when weeks change
-    const keys = analyticsModel.map(r=>r.key);
-    if(keys.length===0) return;
-    if(!keys.includes(rangeFrom)) setRangeFrom(keys[0]);
-    if(!keys.includes(rangeTo)) setRangeTo(keys[keys.length-1]);
-  }, [analyticsModel]);
+  /* drag/drop: cross-column; Ctrl=copy; move fills blanks instead of shifting blanks */
+  function handleDrop(e, weekId, targetRow, targetCol) {
+    e.preventDefault();
+    if (!draggedItem || draggedItem.weekId !== weekId) {
+      setDraggedItem(null);
+      return;
+    }
 
-  const selectedRows = useMemo(()=>{
-    if(analyticsModel.length===0) return [];
-    const keys = analyticsModel.map(r=>r.key);
-    const iFrom = Math.max(0, keys.indexOf(rangeFrom));
-    const iTo = Math.max(0, keys.indexOf(rangeTo));
-    const a = Math.min(iFrom, iTo);
-    const b = Math.max(iFrom, iTo);
-    return analyticsModel.slice(a, b+1);
-  }, [analyticsModel, rangeFrom, rangeTo]);
+    const isCopy = e.ctrlKey;
 
-  // toggle for stacked bars
+    setWeeks(prev => prev.map(w => {
+      if (w.id !== weekId) return w;
+      let tasks = [...w.tasks];
+
+      const srcCol = draggedItem.col;
+      const srcRow = draggedItem.rowIndex;
+      const dragged = tasks[srcRow][srcCol];
+
+      if (isBlankCell(dragged)) return w;
+
+      // If moving within same cell, no-op
+      if (!isCopy && srcCol === targetCol && srcRow === targetRow) return w;
+
+      // clear source if move
+      if (!isCopy) {
+        tasks[srcRow] = {
+          ...tasks[srcRow],
+          [srcCol]: ensureLineStatuses({ text:"", status:0, ranking: srcRow+1, lineStatuses: [] })
+        };
+      }
+
+      // place into target: if target blank, overwrite; else push down only filled cells (keeps blanks as blanks)
+      const target = tasks[targetRow][targetCol];
+
+      if (isBlankCell(target)) {
+        tasks[targetRow] = {
+          ...tasks[targetRow],
+          [targetCol]: ensureLineStatuses({ ...dragged, ranking: targetRow+1 })
+        };
+      } else {
+        // push down (from bottom up) but do not "move blanks"; we shift the actual cell objects down
+        for (let i = tasks.length - 1; i > targetRow; i--) {
+          tasks[i] = {
+            ...tasks[i],
+            [targetCol]: ensureLineStatuses({ ...tasks[i-1][targetCol], ranking: i+1 })
+          };
+        }
+        tasks[targetRow] = {
+          ...tasks[targetRow],
+          [targetCol]: ensureLineStatuses({ ...dragged, ranking: targetRow+1 })
+        };
+      }
+
+      tasks = sortColumnByCategory(tasks, targetCol);
+      if (!isCopy) tasks = sortColumnByCategory(tasks, srcCol);
+
+      return { ...w, tasks };
+    }));
+
+    setDraggedItem(null);
+  }
+
+  /* keyboard nav + alt+enter fix */
+  function focusCell(weekId, row, colIndex){
+    if(row < 0 || colIndex < 0 || colIndex >= columns.length || row >= 16) return;
+    const key = `${weekId}-${row}-${colIndex}`;
+    const el = inputRefs.current[key];
+    if(el) el.focus();
+  }
+
+  function handleKeyDown(e, weekId, rowIndex, colIndex){
+    // Alt+Enter: keep native newline behavior (like before) — do NOT preventDefault
+    if (e.key === 'Enter' && e.altKey) return;
+
+    // Enter: reorg and move down
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey){
+      e.preventDefault();
+      const col = columns[colIndex];
+      setWeeks(prev => prev.map(w => {
+        if (w.id !== weekId) return w;
+        let newTasks = sortColumnByCategory([...w.tasks], col);
+        return { ...w, tasks: newTasks };
+      }));
+      focusCell(weekId, rowIndex+1, colIndex);
+      return;
+    }
+
+    if (e.key === 'Enter' && e.shiftKey){
+      e.preventDefault();
+      focusCell(weekId, rowIndex-1, colIndex);
+      return;
+    }
+
+    if (e.key === 'Tab' && !e.shiftKey){
+      e.preventDefault();
+      focusCell(weekId, rowIndex, colIndex+1);
+      return;
+    }
+
+    if (e.key === 'Tab' && e.shiftKey){
+      e.preventDefault();
+      focusCell(weekId, rowIndex, colIndex-1);
+      return;
+    }
+  }
+
+  /* add new week */
+  function addNewWeek(){
+    const prevWeek = weeks[0];
+    const nowYear = new Date().getFullYear();
+    const nextNum = prevWeek && typeof prevWeek.weekNumber === 'number' ? prevWeek.weekNumber + 1 : currentWeek;
+    const newWeek = { id: Date.now(), weekNumber: nextNum, year: nowYear, tasks: makeEmptyTasks() };
+
+    // carry over open delegated + objectives
+    if(prevWeek){
+      const openDel = prevWeek.tasks.filter(t => t.delegatedTasks.text.trim() && t.delegatedTasks.status !== 2);
+      const openObj = prevWeek.tasks.filter(t => t.weeklyObjectives.text.trim() && t.weeklyObjectives.status !== 2);
+      openDel.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].delegatedTasks = ensureLineStatuses({ ...t.delegatedTasks, status:0 }); });
+      openObj.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].weeklyObjectives = ensureLineStatuses({ ...t.weeklyObjectives, status:0 }); });
+    }
+
+    setWeeks([newWeek, ...weeks]);
+  }
+
+  /* save/load */
+  function saveToFile(){
+    const blob = new Blob([JSON.stringify(weeks, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const today = new Date().toISOString().split('T')[0];
+    a.download = `weekly-organizer-${today}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+
+    // mark "saved snapshot" so auto-download doesn't loop
+    lastSavedHashRef.current = JSON.stringify(weeks);
+  }
+
+  function loadFromFile(e){
+    const f = e.target.files?.[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+
+        // migration + ensure lineStatuses
+        parsed.forEach(week => {
+          week.tasks.forEach(row => {
+            Object.keys(row).forEach(col => {
+              const cell = row[col];
+              if (!cell) return;
+              if (cell.status === undefined) {
+                cell.status = cell.completed ? 2 : 0;
+                delete cell.completed;
+              }
+              if (!Array.isArray(cell.lineStatuses)) cell.lineStatuses = [];
+              row[col] = ensureLineStatuses(cell);
+            });
+          });
+        });
+
+        setWeeks(parsed);
+        lastSavedHashRef.current = JSON.stringify(parsed);
+      } catch {
+        alert('Invalid file');
+      }
+    };
+    r.readAsText(f);
+  }
+
+  /* localStorage autosave */
+  useEffect(()=> {
+    try { localStorage.setItem('weekly-task-organizer', JSON.stringify(weeks)); } catch {}
+  }, [weeks]);
+
+  /* auto-download 2 minutes after last meaningful change (NO loop) */
+  const lastSavedHashRef = useRef(null);
+  useEffect(() => {
+    const curHash = JSON.stringify(weeks);
+    if (lastSavedHashRef.current === null) lastSavedHashRef.current = curHash;
+
+    // if nothing changed vs last saved snapshot, do nothing
+    if (curHash === lastSavedHashRef.current) return;
+
+    const timer = setTimeout(() => {
+      // still changed?
+      const nowHash = JSON.stringify(weeks);
+      if (nowHash !== lastSavedHashRef.current) saveToFile();
+    }, 2 * 60 * 1000);
+
+    return () => clearTimeout(timer);
+  }, [weeks]);
+
+  /* week number edit */
+  function updateWeekNumber(weekId, newNumber){
+    setWeeks(prev => prev.map(w => w.id === weekId ? { ...w, weekNumber: newNumber } : w));
+  }
+
+  /* today detection */
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+
+  /* --------- ANALYTICS --------- */
   const [stackMode, setStackMode] = useState("all"); // all | done | open
+  const [rangeStart, setRangeStart] = useState(0);
+  const [rangeEnd, setRangeEnd] = useState(0);
 
-  function valueByMode(v){
-    if(stackMode==="done") return v.done;
-    if(stackMode==="open") return v.open;
+  const analyticsWeeks = useMemo(() => {
+    // only monday..friday
+    const list = weeks
+      .slice()
+      .sort((a,b)=> (a.year===b.year ? a.weekNumber-b.weekNumber : a.year-b.year))
+      .map(w => {
+        const byCat = new Map(); // cat -> { total, done, open }
+        let total = 0, done = 0, open = 0;
+
+        w.tasks.forEach(row => {
+          dayCols.forEach(c => {
+            const cell = ensureLineStatuses(row[c] || {text:"",status:0,ranking:0,lineStatuses:[]});
+            if (!cell.text.trim()) return;
+
+            // count main task (line 1) as 1
+            const cat = extractCategory(cell.text.split("\n")[0] || cell.text);
+            const cur = byCat.get(cat) || { total:0, done:0, open:0 };
+            cur.total += 1;
+            if (cell.status === 2) { cur.done += 1; done += 1; }
+            else { cur.open += 1; open += 1; }
+            total += 1;
+
+            // count subtasks (lines 2+) as additional tasks
+            const lines = safeLines(cell.text);
+            const subs = cell.lineStatuses || [];
+            for (let i=1; i<lines.length; i++){
+              const lineText = lines[i];
+              if (lineText.trim()==="") continue; // don't count empty lines
+              const st = subs[i-1] ?? 0;
+              const cur2 = byCat.get(cat) || { total:0, done:0, open:0 };
+              cur2.total += 1;
+              if (st === 2) { cur2.done += 1; done += 1; }
+              else { cur2.open += 1; open += 1; }
+              total += 1;
+              byCat.set(cat, cur2);
+            }
+
+            byCat.set(cat, cur);
+          });
+        });
+
+        const completionPct = total ? Math.round((done/total)*100) : 0;
+        return { ...w, key: weekKey(w), byCat, total, done, open, completionPct };
+      });
+
+    // range defaults
+    if (list.length && rangeEnd === 0 && rangeStart === 0) {
+      // set full range by default
+      setRangeStart(0);
+      setRangeEnd(list.length - 1);
+    }
+    return list;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weeks]);
+
+  // Top categories globally (for “top 5 + others” and “top 10 + others”)
+  const topCats = useMemo(() => {
+    const agg = new Map();
+    analyticsWeeks.forEach(w => {
+      w.byCat.forEach((v,k) => {
+        const cur = agg.get(k) || { total:0, done:0, open:0 };
+        cur.total += v.total;
+        cur.done += v.done;
+        cur.open += v.open;
+        agg.set(k, cur);
+      });
+    });
+    const sorted = Array.from(agg.entries())
+      .sort((a,b)=> (b[1].total - a[1].total));
+    return {
+      top5: sorted.slice(0,5).map(x=>x[0]),
+      top10: sorted.slice(0,10).map(x=>x[0])
+    };
+  }, [analyticsWeeks]);
+
+  // Charts
+  const mainChartRef = useRef(null);
+  const smallChartRef = useRef(null);
+  const mainCanvasRef = useRef(null);
+  const smallCanvasRef = useRef(null);
+
+  function destroyChart(ref){
+    if (ref.current) { ref.current.destroy(); ref.current = null; }
+  }
+
+  function getStackValue(v){
+    if (stackMode === "done") return v.done;
+    if (stackMode === "open") return v.open;
     return v.total;
   }
 
-  // compute Top5 (for main chart) across selected range, then build week series
-  const chartData = useMemo(()=>{
-    const agg = {}; // cat -> count (depending on mode)
-    selectedRows.forEach(r=>{
-      Object.entries(r.cats).forEach(([cat,v])=>{
-        agg[cat] = (agg[cat]||0) + valueByMode(v);
-      });
-    });
-    const top5 = Object.entries(agg)
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,5)
-      .map(([k])=>k);
+  useEffect(() => {
+    if (activeTab !== "analytics") return;
+    if (!mainCanvasRef.current) return;
 
-    const labels = selectedRows.map(r=>r.label);
+    destroyChart(mainChartRef);
 
-    // build 100% stacks for each top5 + Others
-    const series = {};
-    top5.forEach(c=> series[c] = []);
-    series["Others"] = [];
+    const labels = analyticsWeeks.map(w => `W${w.weekNumber}-${String(w.year).slice(-2)}`);
 
-    selectedRows.forEach(r=>{
-      const totalThisWeek = Object.values(r.cats).reduce((s,v)=>s + valueByMode(v), 0);
-      const denom = totalThisWeek || 1;
-
+    // build 100% stacked datasets for top5 + others
+    const cats = topCats.top5;
+    const dataByCat = cats.map(cat => analyticsWeeks.map(w => {
+      const v = w.byCat.get(cat) || {total:0,done:0,open:0};
+      return getStackValue(v);
+    }));
+    const othersData = analyticsWeeks.map(w => {
       let sumTop = 0;
-      top5.forEach(c=>{
-        const v = r.cats[c] ? valueByMode(r.cats[c]) : 0;
-        sumTop += v;
-        series[c].push((v/denom)*100);
+      cats.forEach(cat => {
+        const v = w.byCat.get(cat) || {total:0,done:0,open:0};
+        sumTop += getStackValue(v);
       });
-
-      const others = Math.max(0, totalThisWeek - sumTop);
-      series["Others"].push((others/denom)*100);
+      const denom = stackMode==="done" ? w.done : stackMode==="open" ? w.open : w.total;
+      return Math.max(0, denom - sumTop);
     });
 
-    // completion line should be weekly completion% over ALL tasks (independent of stackMode)
-    const completionLine = selectedRows.map(r=>r.completionPct);
-
-    return { labels, top5, series, completionLine };
-  }, [selectedRows, stackMode]);
-
-  // Small chart: Top10+Others across selected range as a single 100% column
-  const smallChartData = useMemo(()=>{
-    const aggAll = {}; // cat -> count by mode across range
-    selectedRows.forEach(r=>{
-      Object.entries(r.cats).forEach(([cat,v])=>{
-        aggAll[cat] = (aggAll[cat]||0) + valueByMode(v);
-      });
-    });
-    const top10 = Object.entries(aggAll)
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,10)
-      .map(([k])=>k);
-
-    const total = Object.values(aggAll).reduce((s,v)=>s+v,0) || 1;
-    const topSum = top10.reduce((s,k)=>s + (aggAll[k]||0),0);
-    const others = Math.max(0, total - topSum);
-
-    const labels = ["Selected range"];
-    const series = {};
-    top10.forEach(k=>{
-      series[k] = [((aggAll[k]||0)/total)*100];
-    });
-    series["Others"] = [(others/total)*100];
-
-    return { labels, top10, series };
-  }, [selectedRows, stackMode]);
-
-  // Table: Top10 + Others per week, with Open & Done counts
-  const tableModel = useMemo(()=>{
-    const aggAll = {};
-    selectedRows.forEach(r=>{
-      Object.entries(r.cats).forEach(([cat,v])=>{
-        aggAll[cat] = (aggAll[cat]||0) + v.total; // ranking top10 by total across range
-      });
-    });
-    const top10 = Object.entries(aggAll)
-      .sort((a,b)=>b[1]-a[1])
-      .slice(0,10)
-      .map(([k])=>k);
-
-    const rows = selectedRows.map(r=>{
-      const out = { label: r.label };
-      let othersOpen=0, othersDone=0;
-
-      top10.forEach(cat=>{
-        const v = r.cats[cat] || { open:0, done:0, total:0 };
-        out[`${cat}__open`] = v.open;
-        out[`${cat}__done`] = v.done;
-      });
-
-      Object.entries(r.cats).forEach(([cat,v])=>{
-        if(top10.includes(cat)) return;
-        othersOpen += v.open;
-        othersDone += v.done;
-      });
-
-      out[`Others__open`] = othersOpen;
-      out[`Others__done`] = othersDone;
-
-      return out;
-    });
-
-    return { top10, rows };
-  }, [selectedRows]);
-
-  /* ---------- CHARTS (refs + effects) ---------- */
-  const mainChartRef = useRef(null);
-  const smallChartRef = useRef(null);
-  const mainChartInstance = useRef(null);
-  const smallChartInstance = useRef(null);
-
-  useEffect(()=>{
-    if(tab!=="analytics") return;
-
-    // destroy old
-    if(mainChartInstance.current){
-      mainChartInstance.current.destroy();
-      mainChartInstance.current = null;
+    // normalize to 100%
+    const denomArr = analyticsWeeks.map(w => stackMode==="done" ? w.done : stackMode==="open" ? w.open : w.total);
+    function pct(series){
+      return series.map((x,i)=> denomArr[i] ? (x/denomArr[i])*100 : 0);
     }
 
-    const canvas = mainChartRef.current;
-    if(!canvas) return;
-
-    const categories = [...chartData.top5, "Others"];
-    const datasets = categories.map((cat, idx)=>({
-      type: 'bar',
-      label: cat,
-      data: chartData.series[cat] || [],
-      borderWidth: 1,
-      stack: 'stack1',
-      yAxisID: 'y'
-    }));
-
-    // completion line on y2
-    datasets.push({
-      type: 'line',
-      label: 'Completion %',
-      data: chartData.completionLine,
-      yAxisID: 'y2',
-      tension: 0.25,
-      pointRadius: 3
-    });
-
-    mainChartInstance.current = new Chart(canvas, {
-      data: {
-        labels: chartData.labels,
-        datasets
+    const datasets = [
+      ...cats.map((cat, idx) => ({
+        type: "bar",
+        label: cat,
+        data: pct(dataByCat[idx]),
+        stack: "stack",
+        borderWidth: 0
+      })),
+      {
+        type: "bar",
+        label: "Others",
+        data: pct(othersData),
+        stack: "stack",
+        borderWidth: 0
       },
+      {
+        type: "line",
+        label: "Completion %",
+        data: analyticsWeeks.map(w => w.completionPct),
+        yAxisID: "y2",
+        tension: 0.25,
+        pointRadius: 3
+      }
+    ];
+
+    // plugin for integer labels on completion line
+    const labelPlugin = {
+      id: 'lineDataLabels',
+      afterDatasetsDraw(chart, args, pluginOptions) {
+        const { ctx } = chart;
+        chart.data.datasets.forEach((ds, dsIndex) => {
+          if (ds.type !== "line") return;
+          const meta = chart.getDatasetMeta(dsIndex);
+          ctx.save();
+          ctx.font = "10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          meta.data.forEach((pt, i) => {
+            const val = ds.data[i];
+            if (val === null || val === undefined) return;
+            ctx.fillStyle = "#111827";
+            ctx.fillText(`${Math.round(val)}%`, pt.x, pt.y - 6);
+          });
+          ctx.restore();
+        });
+      }
+    };
+
+    mainChartRef.current = new Chart(mainCanvasRef.current.getContext("2d"), {
+      data: { labels, datasets },
+      plugins: [labelPlugin],
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: { mode: 'index', intersect: false },
-          linePointLabels: { datasetIndex: datasets.length - 1, fontSize: 11 }
-        },
-        interaction: { mode: 'index', intersect: false },
         scales: {
           y: {
             stacked: true,
             min: 0,
             max: 100,
             ticks: {
-              callback: (v)=> `${v}%`
-            },
-            title: { display: true, text: 'Category share (100%)' }
+              callback: (v) => `${Math.round(v)}%`
+            }
           },
           y2: {
-            position: 'right',
+            position: "right",
             min: 0,
             max: 100,
             grid: { drawOnChartArea: false },
             ticks: {
-              callback: (v)=> `${v}%`
-            },
-            title: { display: true, text: 'Completion %' }
-          },
-          x: {
-            stacked: true
+              callback: (v) => `${Math.round(v)}%`
+            }
+          }
+        },
+        plugins: {
+          legend: { position: "bottom" },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${Math.round(ctx.parsed.y)}%`
+            }
           }
         }
-      },
-      plugins: [LinePointLabelPlugin]
+      }
     });
 
-    return ()=> {
-      if(mainChartInstance.current){
-        mainChartInstance.current.destroy();
-        mainChartInstance.current = null;
-      }
-    };
-  }, [tab, chartData]);
+    return () => destroyChart(mainChartRef);
+  }, [activeTab, analyticsWeeks, topCats.top5, stackMode]);
 
-  useEffect(()=>{
-    if(tab!=="analytics") return;
+  useEffect(() => {
+    if (activeTab !== "analytics") return;
+    if (!smallCanvasRef.current) return;
 
-    if(smallChartInstance.current){
-      smallChartInstance.current.destroy();
-      smallChartInstance.current = null;
-    }
+    destroyChart(smallChartRef);
 
-    const canvas = smallChartRef.current;
-    if(!canvas) return;
+    const start = Math.max(0, Math.min(rangeStart, analyticsWeeks.length-1));
+    const end = Math.max(0, Math.min(rangeEnd, analyticsWeeks.length-1));
+    const lo = Math.min(start, end);
+    const hi = Math.max(start, end);
 
-    const categories = [...smallChartData.top10, "Others"];
-    const datasets = categories.map((cat)=>({
-      type: 'bar',
-      label: cat,
-      data: smallChartData.series[cat] || [0],
-      borderWidth: 1,
-      stack: 'stackSmall',
-      yAxisID: 'y'
-    }));
+    const slice = analyticsWeeks.slice(lo, hi+1);
 
-    smallChartInstance.current = new Chart(canvas, {
-      type: 'bar',
+    // aggregate for range
+    const agg = new Map();
+    let denom = 0;
+
+    slice.forEach(w => {
+      denom += (stackMode==="done" ? w.done : stackMode==="open" ? w.open : w.total);
+      w.byCat.forEach((v,k) => {
+        const cur = agg.get(k) || 0;
+        agg.set(k, cur + getStackValue(v));
+      });
+    });
+
+    const top10 = topCats.top10;
+    const topVals = top10.map(cat => agg.get(cat) || 0);
+    const topSum = topVals.reduce((a,b)=>a+b,0);
+    const others = Math.max(0, denom - topSum);
+
+    const labels = [...top10, "Others"];
+    const data = [...topVals, others].map(x => denom ? (x/denom)*100 : 0);
+
+    smallChartRef.current = new Chart(smallCanvasRef.current.getContext("2d"), {
+      type: "bar",
       data: {
-        labels: smallChartData.labels,
-        datasets
+        labels,
+        datasets: [{
+          label: "Share %",
+          data
+        }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: { mode: 'index', intersect: false }
-        },
         scales: {
           y: {
-            stacked: true,
             min: 0,
             max: 100,
-            ticks: { callback: (v)=>`${v}%` }
-          },
-          x: { stacked: true }
+            ticks: { callback: (v)=>`${Math.round(v)}%` }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx)=> `${Math.round(ctx.parsed.y)}%`
+            }
+          }
         }
       }
     });
 
-    return ()=> {
-      if(smallChartInstance.current){
-        smallChartInstance.current.destroy();
-        smallChartInstance.current = null;
-      }
-    };
-  }, [tab, smallChartData]);
+    return () => destroyChart(smallChartRef);
+  }, [activeTab, analyticsWeeks, rangeStart, rangeEnd, topCats.top10, stackMode]);
 
-  /* ---------- UI helpers: render view-mode lines with buttons ---------- */
-  function renderViewCell(week, rowIndex, col){
-    const cell = week.tasks[rowIndex][col];
-    const base = getCellBaseStyle(col, rowIndex);
-    const lines = (cell.text || "").split("\n");
-    const firstLine = (lines[0] ?? "");
-    const subLines = lines.slice(1);
+  // analytics table: weeks x (top10+others) with Open + Done
+  const analyticsTable = useMemo(() => {
+    const cats = topCats.top10;
+    return analyticsWeeks.map(w => {
+      const row = { key: w.key, week: `W${w.weekNumber}-${w.year}`, completionPct: w.completionPct };
+      let othersOpen = 0, othersDone = 0;
 
-    const bigStatus = clampStatus(cell.status);
-    const bigBg = buttonBg(bigStatus);
+      // first compute others
+      w.byCat.forEach((v,k) => {
+        if (cats.includes(k)) return;
+        othersOpen += v.open;
+        othersDone += v.done;
+      });
 
-    const mainTextColor = bigStatus === 2 ? mainTextColorForCompleted(base.bg) : base.text;
+      cats.forEach(cat => {
+        const v = w.byCat.get(cat) || {open:0,done:0,total:0};
+        row[cat] = { open: v.open, done: v.done };
+      });
+      row["Others"] = { open: othersOpen, done: othersDone };
 
-    return (
-      <div className="flex gap-2">
-        {/* left stack: big button only (aligned top) */}
-        <div style={{ width: 20, display:'flex', flexDirection:'column', alignItems:'center', gap: 4 }}>
-          <div
-            onClick={()=>cycleMainStatus(week.id, rowIndex, col)}
-            title="Toggle task status"
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: 3,
-              border: "1px solid #cbd5e1",
-              background: bigBg,
-              cursor: "pointer",
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              fontSize: 10,
-              fontWeight: 700,
-              color: bigStatus===2 ? "#fff" : "#111827",
-              lineHeight: "18px"
-            }}
-          >
-            {cell.ranking}
-          </div>
-        </div>
+      return row;
+    });
+  }, [analyticsWeeks, topCats.top10]);
 
-        {/* right: text lines (exactly as before visually; no duplication) */}
-        <div style={{ flex: 1, display:'flex', flexDirection:'column', gap: 0 }}>
-          {/* first line */}
-          <div
-            style={{
-              fontSize: 12,
-              lineHeight: "1.2rem",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              color: mainTextColor,
-              textDecoration: bigStatus===2 ? "line-through" : "none",
-              minHeight: 20
-            }}
-          >
-            {firstLine}
-          </div>
-
-          {/* sub lines: small buttons on the left */}
-          {subLines.map((ln, i)=>{
-            const st = clampStatus((cell.subStatuses || [])[i] ?? 0);
-            const subColor = st===2 ? "#6b7280" : base.text;
-            const subBg = buttonBg(st);
-
-            return (
-              <div key={i} className="flex items-start gap-2">
-                <div style={{ width: 20, display:'flex', justifyContent:'center' }}>
-                  <div
-                    onClick={()=>cycleSubStatus(week.id, rowIndex, col, i)}
-                    title="Toggle subtask status"
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: 3,
-                      border: "1px solid #cbd5e1",
-                      background: subBg,
-                      cursor: "pointer",
-                      marginTop: 2
-                    }}
-                  />
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    lineHeight: "1.2rem",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                    color: st===2 ? subColor : base.text,
-                    textDecoration: st===2 ? "line-through" : "none",
-                    minHeight: 18
-                  }}
-                >
-                  {ln}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  function renderEditCell(week, rowIndex, col){
-    const cell = week.tasks[rowIndex][col];
-    const base = getCellBaseStyle(col, rowIndex);
-    const st = clampStatus(cell.status);
-    const mainTextColor = st===2 ? mainTextColorForCompleted(base.bg) : base.text;
-
-    return (
-      <div className="flex gap-2">
-        {/* big button stays (aligned top) */}
-        <div style={{ width: 20, display:'flex', flexDirection:'column', alignItems:'center', gap: 4 }}>
-          <div
-            onClick={()=>cycleMainStatus(week.id, rowIndex, col)}
-            title="Toggle task status"
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: 3,
-              border: "1px solid #cbd5e1",
-              background: buttonBg(st),
-              cursor: "pointer",
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              fontSize: 10,
-              fontWeight: 700,
-              color: st===2 ? "#fff" : "#111827",
-              lineHeight: "18px"
-            }}
-          >
-            {cell.ranking}
-          </div>
-        </div>
-
-        {/* textarea: behaves like before (Alt+Enter is just newline) */}
-        <div style={{ flex: 1 }}>
-          <textarea
-            value={cell.text}
-            onChange={(e)=>{
-              const v = e.target.value;
-              updateCell(week.id, rowIndex, col, (c)=>({ ...c, text: v }));
-            }}
-            onBlur={()=>{
-              finalizeTextEdit(week.id, rowIndex, col);
-              setEditing(null);
-            }}
-            onKeyDown={(e)=>{
-              // keep Alt+Enter default newline behaviour
-              // do not prevent Enter here; user wants "as before"
-            }}
-            className="w-full resize-none outline-none text-xs"
-            style={{
-              background: "transparent",
-              color: mainTextColor,
-              textDecoration: st===2 ? "line-through" : "none",
-              border: "none",
-              padding: 0,
-              margin: 0
-            }}
-            rows={Math.max(1, (cell.text || "").split("\n").length)}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  const firstWeek = weeks[0];
-
+  /* ---------- UI ---------- */
   return (
-    <div className="p-2">
+    <div className="p-1 bg-white min-h-screen">
+      <div className="bg-white w-full">
+        {/* Tabs */}
+        <div className="flex items-center gap-2 px-2 py-2 border-b border-gray-200">
+          <button
+            onClick={()=>setActiveTab('organizer')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+              activeTab==='organizer'
+                ? 'bg-blue-600 text-white shadow'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Weekly Organizer
+          </button>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-2">
-        <button
-          onClick={()=>setTab("organizer")}
-          className={tab==="organizer" ? "bg-blue-600 text-white px-3 py-1 rounded" : "bg-gray-200 px-3 py-1 rounded"}
-        >
-          Organizer
-        </button>
-        <button
-          onClick={()=>setTab("analytics")}
-          className={tab==="analytics" ? "bg-blue-600 text-white px-3 py-1 rounded" : "bg-gray-200 px-3 py-1 rounded"}
-        >
-          Analytics
-        </button>
-      </div>
+          <button
+            onClick={()=>setActiveTab('analytics')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+              activeTab==='analytics'
+                ? 'bg-blue-600 text-white shadow'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Analytics
+          </button>
 
-      {/* Organizer */}
-      {tab==="organizer" && (
-        <table className="w-full border-collapse bg-white">
-          <thead>
-            <tr className="bg-gray-700 text-white text-xs">
-              <th className="w-[160px] p-1 text-left">W-{firstWeek.weekNumber}</th>
-              <th className="p-1 text-left">Objectives</th>
-              <th className="p-1 text-left">Mon</th>
-              <th className="p-1 text-left">Tue</th>
-              <th className="p-1 text-left">Wed</th>
-              <th className="p-1 text-left">Thu</th>
-              <th className="p-1 text-left">Fri</th>
-            </tr>
-          </thead>
-          <tbody>
-            {firstWeek.tasks.map((row,ri)=>(
-              <tr key={ri}>
-                {columns.map(col=>{
-                  const base = getCellBaseStyle(col, ri);
-                  const cell = row[col];
-                  const ghost = isBlankText(cell.text);
-
-                  return (
-                    <td
-                      key={col}
-                      className="border"
-                      style={{
-                        background: ghost ? (base.bg + "33") : base.bg,
-                        padding: "2px",
-                        color: base.text
-                      }}
-                      onDoubleClick={()=>{
-                        setEditing({ weekId: firstWeek.id, row: ri, col });
-                      }}
-                      onClick={()=>{
-                        // single click: focus edit when empty (optional). keep conservative:
-                        // if user wants, they can double click to edit.
-                      }}
-                    >
-                      {isEditing(firstWeek.id, ri, col)
-                        ? renderEditCell(firstWeek, ri, col)
-                        : renderViewCell(firstWeek, ri, col)
-                      }
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* Analytics */}
-      {tab==="analytics" && (
-        <div className="bg-white p-3 rounded shadow-sm">
-          <div className="flex flex-wrap items-center gap-3 mb-3">
-            <div className="text-sm font-semibold">Analytics (Mon→Fri only)</div>
-
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <div className="text-xs text-gray-600">Range:</div>
-              <select className="border rounded px-2 py-1 text-xs" value={rangeFrom} onChange={e=>setRangeFrom(e.target.value)}>
-                {analyticsModel.map(r=>(<option key={r.key} value={r.key}>{r.label} ({r.year})</option>))}
-              </select>
-              <div className="text-xs text-gray-600">→</div>
-              <select className="border rounded px-2 py-1 text-xs" value={rangeTo} onChange={e=>setRangeTo(e.target.value)}>
-                {analyticsModel.map(r=>(<option key={r.key} value={r.key}>{r.label} ({r.year})</option>))}
-              </select>
-
-              <div className="ml-3 flex items-center gap-1">
-                <button
-                  className={stackMode==="all" ? "bg-blue-600 text-white px-2 py-1 rounded text-xs" : "bg-gray-200 px-2 py-1 rounded text-xs"}
-                  onClick={()=>setStackMode("all")}
-                >All</button>
-                <button
-                  className={stackMode==="done" ? "bg-blue-600 text-white px-2 py-1 rounded text-xs" : "bg-gray-200 px-2 py-1 rounded text-xs"}
-                  onClick={()=>setStackMode("done")}
-                >Completed</button>
-                <button
-                  className={stackMode==="open" ? "bg-blue-600 text-white px-2 py-1 rounded text-xs" : "bg-gray-200 px-2 py-1 rounded text-xs"}
-                  onClick={()=>setStackMode("open")}
-                >Uncompleted</button>
-              </div>
-            </div>
+          <div className="ml-auto flex gap-2">
+            <button onClick={saveToFile} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded">Save</button>
+            <button onClick={()=>fileInputRef.current?.click()} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded">Load</button>
+            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={loadFromFile} />
+            {activeTab==='organizer' && (
+              <button onClick={addNewWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Add Week</button>
+            )}
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            {/* main chart */}
-            <div className="lg:col-span-2">
-              <div className="text-sm font-semibold mb-2">Weekly trend</div>
-              <div style={{ height: 320 }}>
-                <canvas ref={mainChartRef}></canvas>
-              </div>
-              <div className="text-xs text-gray-600 mt-1">
-                Bars = category share (Top 5 + Others) for the selected mode. Line = completion % (all tasks).
-              </div>
-            </div>
+        {activeTab==='organizer' ? (
+          <div>
+            {weeks.map((week)=>{
+              const year = week.year || currentYear;
+              const wkNum = Number(week.weekNumber) || currentWeek;
+              const monday = getDateOfISOWeek(wkNum, year);
+              const dates = [
+                monday,
+                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+1),
+                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+2),
+                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+3),
+                new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+4)
+              ];
 
-            {/* small chart */}
-            <div>
-              <div className="text-sm font-semibold mb-2">Top 10 share (selected range)</div>
-              <div style={{ height: 320 }}>
-                <canvas ref={smallChartRef}></canvas>
-              </div>
-              <div className="text-xs text-gray-600 mt-1">
-                100% stacked, Top 10 + Others (selected mode).
-              </div>
-            </div>
+              // compute which weekday column is "today" (Mon..Fri = indices 2..6)
+              let todayColIndex = -1;
+              dates.forEach((d,i)=>{
+                const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+                if(key === todayKey) todayColIndex = i + 2;
+              });
+
+              return (
+                <table key={week.id} className="w-full border-collapse mb-2">
+                  <thead>
+                    <tr>
+                      {/* first header cell */}
+                      <th
+                        className="text-white text-center px-1 py-[2px] text-[10px] first-col"
+                        style={{
+                          background:'#374151',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        W-
+                        <input
+                          value={week.weekNumber}
+                          onChange={(e)=> updateWeekNumber(week.id, parseInt(e.target.value) || 0)}
+                          className="w-8 text-xs font-semibold bg-transparent border-b border-gray-300 focus:outline-none text-white text-center"
+                          title="Click to edit week number"
+                        />{" "}
+                        / Deleg.
+                      </th>
+
+                      {/* weekly objectives */}
+                      <th className="text-white text-center px-2 py-1 text-xs" style={{ background:'#374151', whiteSpace:'nowrap' }}>
+                        Weekly Objectives
+                      </th>
+
+                      {/* weekdays */}
+                      {["Monday","Tuesday","Wednesday","Thursday","Friday"].map((day,i)=>{
+                        const idx = i + 2;
+                        const isToday = idx === todayColIndex;
+                        return (
+                          <th
+                            key={day}
+                            className="text-white text-center px-2 py-1 text-xs"
+                            style={{
+                              background: isToday ? '#3b82f6' : '#374151',
+                              borderLeft: isToday ? '3px solid #2563eb' : '0',
+                              borderRight: isToday ? '3px solid #2563eb' : '0',
+                              whiteSpace:'nowrap'
+                            }}
+                          >
+                            {day} ({formatDayShort(dates[i])})
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {week.tasks.map((task,rowIndex)=>(
+                      <tr key={rowIndex}>
+                        {columns.map((col,colIndex)=>{
+                          const cell = ensureLineStatuses(task[col]);
+                          const style = getCellStyle(col, rowIndex, cell.text);
+                          const isToday = colIndex === todayColIndex;
+                          const leftBorder = colIndex === 0 ? '0' : '1px solid rgba(0,0,0,0.06)';
+                          const cellBorderLeft = isToday ? '3px solid #2563eb' : leftBorder;
+                          const cellBorderRight = isToday ? '3px solid #2563eb' : '0';
+
+                          const lines = safeLines(cell.text);
+                          const subCount = Math.max(0, lines.length - 1);
+
+                          // text color: completed on red/orange stays white
+                          const completedTextColor =
+                            (style.bg.includes("#dc2626") || style.bg.includes("#f97316")) ? "#fff" : "#6b7280";
+
+                          return (
+                            <td
+                              key={col}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setDragOverRow({ weekId: week.id, rowIndex, col });
+                              }}
+                              onDragLeave={() => setDragOverRow(null)}
+                              onDrop={(e) => {
+                                handleDrop(e, week.id, rowIndex, col);
+                                setDragOverRow(null);
+                              }}
+                              style={{
+                                backgroundColor: style.bg,
+                                borderLeft: cellBorderLeft,
+                                borderRight: cellBorderRight,
+                                verticalAlign:'top',
+                                padding:'2px',
+                                width: col === "delegatedTasks" ? "200px" : "auto",
+                                outline: dragOverRow &&
+                                         dragOverRow.weekId === week.id &&
+                                         dragOverRow.rowIndex === rowIndex &&
+                                         dragOverRow.col === col
+                                  ? "2px dashed #2563eb"
+                                  : "none",
+                                outlineOffset: -2
+                              }}
+                            >
+                              <div style={{ display:'flex', alignItems:'flex-start', gap:6 }}>
+                                {/* LEFT: buttons column (main + subtasks) */}
+                                <div
+                                  style={{
+                                    width: 18,
+                                    display:'flex',
+                                    flexDirection:'column',
+                                    alignItems:'center',
+                                    justifyContent:'flex-start',
+                                    gap: 0,
+                                    opacity: style.ghost ? 0.4 : 1
+                                  }}
+                                >
+                                  {/* main button: ranking inside, aligned to first line */}
+                                  <div
+                                    draggable
+                                    onDragStart={()=>setDraggedItem({weekId:week.id,rowIndex,col})}
+                                    onClick={()=>toggleMainStatus(week.id,rowIndex,col)}
+                                    title="Click: 0→1→2. Drag to move. Ctrl+Drag to copy."
+                                    style={{
+                                      width: 16,
+                                      height: 16,
+                                      borderRadius: 3,
+                                      border: "1px solid #9ca3af",
+                                      display:'flex',
+                                      alignItems:'center',
+                                      justifyContent:'center',
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                      cursor: 'grab',
+                                      marginTop: 0,
+                                      background:
+                                        cell.status === 0 ? "#fff" :
+                                        cell.status === 1 ? "#f97316" :
+                                        "#22c55e",
+                                      color: cell.status === 2 ? "#fff" : "#111827",
+                                      lineHeight: "16px"
+                                    }}
+                                  >
+                                    {cell.ranking}
+                                  </div>
+
+                                  {/* subtasks buttons: one per extra line (same 3-state logic), left side */}
+                                  {Array.from({length: subCount}).map((_, i) => {
+                                    const st = cell.lineStatuses?.[i] ?? 0;
+                                    return (
+                                      <div
+                                        key={i}
+                                        onClick={()=>toggleSubLineStatus(week.id,rowIndex,col,i)}
+                                        title="Subtask: 0→1→2"
+                                        style={{
+                                          width: 10,
+                                          height: 10,
+                                          borderRadius: 2,
+                                          border: "1px solid #9ca3af",
+                                          marginTop: 6,     // aligns roughly to next line (line-height 1.2rem)
+                                          background:
+                                            st === 0 ? "#fff" :
+                                            st === 1 ? "#f97316" :
+                                            "#22c55e",
+                                          cursor: "pointer"
+                                        }}
+                                      />
+                                    );
+                                  })}
+                                </div>
+
+                                {/* RIGHT: textarea (unchanged behavior) */}
+                                <div style={{ flex: 1 }}>
+                                  <textarea
+                                    value={cell.text}
+                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'text',e.target.value)}
+                                    onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)}
+                                    onBlur={(e)=>{
+                                      // sync lineStatuses length (no sorting here)
+                                      setWeeks(prev => prev.map(w=>{
+                                        if (w.id !== week.id) return w;
+                                        const tasks = [...w.tasks];
+                                        const c = ensureLineStatuses({ ...tasks[rowIndex][col], text: e.target.value });
+                                        tasks[rowIndex] = { ...tasks[rowIndex], [col]: c };
+                                        return { ...w, tasks };
+                                      }));
+                                    }}
+                                    ref={el=>{
+                                      if(!inputRefs.current) inputRefs.current={};
+                                      inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el;
+                                    }}
+                                    placeholder={style.ghost ? "..." : "Task..."}
+                                    style={{
+                                      width:'100%',
+                                      minHeight:20,
+                                      resize:'none',
+                                      overflow:'hidden',
+                                      background:'transparent',
+                                      color: cell.status === 2 ? completedTextColor : style.text,
+                                      textDecoration: cell.status === 2 ? "line-through" : "none",
+                                      border:'none',
+                                      outline:'none',
+                                      fontSize:12,
+                                      lineHeight:'1.2rem',
+                                      fontStyle: style.ghost ? 'italic' : 'normal'
+                                    }}
+                                    onInput={(e)=>{
+                                      e.target.style.height='auto';
+                                      e.target.style.height=e.target.scrollHeight+'px';
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })}
           </div>
+        ) : (
+          /* ---------- ANALYTICS TAB ---------- */
+          <div className="p-4">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <div className="text-sm font-semibold text-gray-700">Stacked bars:</div>
+              <button
+                onClick={()=>setStackMode("all")}
+                className={`px-3 py-1 rounded text-sm ${stackMode==="all" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}
+              >All entries</button>
+              <button
+                onClick={()=>setStackMode("done")}
+                className={`px-3 py-1 rounded text-sm ${stackMode==="done" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}
+              >Completed</button>
+              <button
+                onClick={()=>setStackMode("open")}
+                className={`px-3 py-1 rounded text-sm ${stackMode==="open" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"}`}
+              >Uncompleted</button>
 
-          {/* table */}
-          <div className="mt-4">
-            <div className="text-sm font-semibold mb-2">Weekly table (Top 10 + Others)</div>
-            <div className="overflow-x-auto border rounded">
-              <table className="min-w-max border-collapse bg-white">
+              <div className="ml-auto flex items-center gap-2 text-sm text-gray-700">
+                <span>Week range:</span>
+                <select
+                  value={rangeStart}
+                  onChange={(e)=>setRangeStart(parseInt(e.target.value,10))}
+                  className="border rounded px-2 py-1"
+                >
+                  {analyticsWeeks.map((w, idx)=>(
+                    <option key={w.key} value={idx}>{`W${w.weekNumber}-${w.year}`}</option>
+                  ))}
+                </select>
+                <span>to</span>
+                <select
+                  value={rangeEnd}
+                  onChange={(e)=>setRangeEnd(parseInt(e.target.value,10))}
+                  className="border rounded px-2 py-1"
+                >
+                  {analyticsWeeks.map((w, idx)=>(
+                    <option key={w.key} value={idx}>{`W${w.weekNumber}-${w.year}`}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <div className="bg-white border rounded p-3 xl:col-span-2" style={{ height: 360 }}>
+                <div className="text-sm font-semibold text-gray-700 mb-2">
+                  Weekly distribution (Top 5 + Others) + Completion %
+                </div>
+                <div style={{ height: 310 }}>
+                  <canvas ref={mainCanvasRef}></canvas>
+                </div>
+              </div>
+
+              <div className="bg-white border rounded p-3" style={{ height: 360 }}>
+                <div className="text-sm font-semibold text-gray-700 mb-2">
+                  Range Top 10 share (Top 10 + Others)
+                </div>
+                <div style={{ height: 310 }}>
+                  <canvas ref={smallCanvasRef}></canvas>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border rounded p-3 mt-4 overflow-x-auto">
+              <div className="text-sm font-semibold text-gray-700 mb-2">
+                Weekly table (Top 10 + Others) — Open + Done
+              </div>
+
+              <table className="w-full" style={{ borderCollapse:'collapse' }}>
                 <thead>
                   <tr className="bg-gray-700 text-white text-xs">
-                    <th className="p-2 sticky left-0 bg-gray-700">Week</th>
-                    {tableModel.top10.map(cat=>(
+                    <th className="p-2 text-left sticky left-0 bg-gray-700">Week</th>
+                    {topCats.top10.map(cat=>(
                       <React.Fragment key={cat}>
                         <th className="p-2 text-center">{cat} Open</th>
                         <th className="p-2 text-center">{cat} Done</th>
@@ -897,41 +1150,37 @@ function App(){
                     ))}
                     <th className="p-2 text-center">Others Open</th>
                     <th className="p-2 text-center">Others Done</th>
+                    <th className="p-2 text-center">Completion %</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {tableModel.rows.map((r, idx)=>(
-                    <tr key={idx} className="border-b text-xs">
-                      <td className="p-2 sticky left-0 bg-white font-semibold">{r.label}</td>
-                      {tableModel.top10.map(cat=>(
+                  {analyticsTable.map(row=>(
+                    <tr key={row.key} className="border-b border-gray-200 text-xs">
+                      <td className="p-2 sticky left-0 bg-white font-semibold">{row.week}</td>
+                      {topCats.top10.map(cat=>(
                         <React.Fragment key={cat}>
-                          <td className="p-2 text-center">{r[`${cat}__open`] ?? 0}</td>
-                          <td className="p-2 text-center">{r[`${cat}__done`] ?? 0}</td>
+                          <td className="p-2 text-center">{row[cat]?.open ?? 0}</td>
+                          <td className="p-2 text-center">{row[cat]?.done ?? 0}</td>
                         </React.Fragment>
                       ))}
-                      <td className="p-2 text-center">{r[`Others__open`] ?? 0}</td>
-                      <td className="p-2 text-center">{r[`Others__done`] ?? 0}</td>
+                      <td className="p-2 text-center">{row["Others"]?.open ?? 0}</td>
+                      <td className="p-2 text-center">{row["Others"]?.done ?? 0}</td>
+                      <td className="p-2 text-center">{row.completionPct}%</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-
-        </div>
-      )}
-
-      <div className="text-xs text-gray-500 mt-2">
-        Tip: double-click a cell to edit. Click buttons to cycle status (white → orange → green).
+        )}
       </div>
-
     </div>
   );
 }
 
-/* ---------- render ---------- */
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+/* ---------- boot ---------- */
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<WeeklyTaskOrganizer />);
 </script>
 </body>
 </html>
