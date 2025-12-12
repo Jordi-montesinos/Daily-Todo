@@ -13,21 +13,13 @@
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Lucide (icons) -->
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-
   <style>
     body { margin: 0; }
     table td, table th { vertical-align: top; }
     /* hide default number input spinners */
     input[type=number]::-webkit-outer-spin-button,
-    input[type=number]::-webkit-inner-spin-button {
-      -webkit-appearance: none;
-      margin: 0;
-    }
-    input[type=number] {
-      -moz-appearance: textfield;
-    }
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -73,35 +65,252 @@ function makeEmptyTasks() {
 /* compute current week/year for defaults */
 const [currentWeek, currentYear] = getISOWeekAndYear(new Date());
 
+/* ---------- helpers ---------- */
+function sanitizeSubtasks(subtasks) {
+  const arr = Array.isArray(subtasks) ? subtasks : [];
+  return arr
+    .map(s => ({ text: String(s?.text || "").trim(), done: !!s?.done }))
+    .filter(s => s.text !== "");
+}
+function cellHasContent(cell){
+  if(!cell) return false;
+  if((cell.text || "").trim() !== "") return true;
+  const subs = sanitizeSubtasks(cell.subtasks);
+  return subs.length > 0;
+}
+function isBlankCell(cell){
+  return !cellHasContent(cell);
+}
+function extractCategory(text){
+  const t = (text || "").trim();
+  const m = t.match(/^(.+?)\s-\s.+$/);
+  return m ? m[1].trim() : "(uncategorized)";
+}
+function weekKey(w){
+  return `${w.year || currentYear}-W${String(w.weekNumber || 0).padStart(2,'0')}`;
+}
+function computeWeeklyCategoryStats(weeksArr){
+  const result = {};
+  weeksArr.forEach(w=>{
+    const wk = weekKey(w);
+    result[wk] = result[wk] || {};
+    (w.tasks || []).forEach(row=>{
+      Object.values(row).forEach(cell=>{
+        if(!cell || !(cell.text || "").trim()) return; // analytics: title only
+        const cat = extractCategory(cell.text);
+        result[wk][cat] = result[wk][cat] || { total:0, done:0 };
+        result[wk][cat].total++;
+        if(cell.status === 2) result[wk][cat].done++;
+      });
+    });
+  });
+  return result;
+}
+function topNCategoriesGlobal(weeklyStats, n){
+  const totals = {};
+  Object.values(weeklyStats).forEach(perWeek=>{
+    Object.entries(perWeek).forEach(([cat, v])=>{
+      totals[cat] = (totals[cat] || 0) + (v.total || 0);
+    });
+  });
+  return Object.entries(totals)
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0, n)
+    .map(([cat])=>cat);
+}
+function buildWeekRows(weeklyStats, topCats){
+  const weeks = Object.keys(weeklyStats).sort();
+  return weeks.map(wk=>{
+    const per = weeklyStats[wk] || {};
+    const row = { wk, buckets: {}, total:0, done:0 };
+    topCats.forEach(c=> row.buckets[c] = { total:0, done:0 });
+    row.buckets["Others"] = { total:0, done:0 };
+
+    Object.entries(per).forEach(([cat, v])=>{
+      const bucket = topCats.includes(cat) ? cat : "Others";
+      row.buckets[bucket].total += v.total || 0;
+      row.buckets[bucket].done  += v.done  || 0;
+      row.total += v.total || 0;
+      row.done  += v.done  || 0;
+    });
+
+    row.completionPct = row.total ? (row.done / row.total) : 0;
+    return row;
+  });
+}
+
+/* ---------- Analytics View ---------- */
+function AnalyticsView({ weeks }) {
+  const weeklyStats = useMemo(()=> computeWeeklyCategoryStats(weeks), [weeks]);
+  const top5 = useMemo(()=> topNCategoriesGlobal(weeklyStats, 5), [weeklyStats]);
+  const top10 = useMemo(()=> topNCategoriesGlobal(weeklyStats, 10), [weeklyStats]);
+
+  const rowsTop5 = useMemo(()=> buildWeekRows(weeklyStats, top5), [weeklyStats, top5]);
+  const rowsTop10 = useMemo(()=> buildWeekRows(weeklyStats, top10), [weeklyStats, top10]);
+
+  const W = 1100, H = 280, padL = 52, padR = 60, padT = 20, padB = 62;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const barCount = rowsTop5.length || 1;
+  const barW = Math.max(10, Math.floor(plotW / barCount) - 6);
+
+  const colors = ["#2563eb","#16a34a","#f97316","#a855f7","#eab308","#6b7280"]; // last = Others
+  const catsForChart = [...top5, "Others"];
+
+  return (
+    <div className="p-4">
+      <div className="text-sm text-gray-600 mb-2">
+        Stacked mix by week (top 5 categories + Others) + completion % (line)
+      </div>
+
+      <div className="overflow-x-auto border border-gray-200 rounded bg-white">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
+          {/* axes */}
+          <line x1={padL} y1={padT} x2={padL} y2={padT+plotH} stroke="#9ca3af" />
+          <line x1={padL} y1={padT+plotH} x2={padL+plotW} y2={padT+plotH} stroke="#9ca3af" />
+          <line x1={padL+plotW} y1={padT} x2={padL+plotW} y2={padT+plotH} stroke="#9ca3af" />
+
+          {[0,50,100].map(v=>{
+            const y = padT + plotH - (v/100)*plotH;
+            return (
+              <g key={v}>
+                <line x1={padL} y1={y} x2={padL+plotW} y2={y} stroke="#e5e7eb" />
+                <text x={padL-8} y={y+4} textAnchor="end" fontSize="10" fill="#6b7280">{v}%</text>
+                <text x={padL+plotW+8} y={y+4} textAnchor="start" fontSize="10" fill="#6b7280">{v}%</text>
+              </g>
+            );
+          })}
+
+          {rowsTop5.map((r, i)=>{
+            const x = padL + i*(barW+6) + 3;
+
+            // stacks to 100%
+            let yCursor = padT + plotH;
+            const stacks = catsForChart.map((cat, ci)=>{
+              const cnt = r.buckets[cat]?.total || 0;
+              const pct = r.total ? (cnt / r.total) : 0;
+              const h = pct * plotH;
+              yCursor -= h;
+              return <rect key={cat} x={x} y={yCursor} width={barW} height={h} fill={colors[ci] || "#6b7280"} />;
+            });
+
+            const cx = x + barW/2;
+            const cy = padT + plotH - (r.completionPct * plotH);
+
+            return (
+              <g key={r.wk}>
+                {stacks}
+
+                {/* completion point + segment */}
+                <circle cx={cx} cy={cy} r="2.5" fill="#111827" />
+                {i < rowsTop5.length-1 && (() => {
+                  const n = rowsTop5[i+1];
+                  const nx = padL + (i+1)*(barW+6) + 3 + barW/2;
+                  const ny = padT + plotH - (n.completionPct * plotH);
+                  return <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="#111827" strokeWidth="1.5" />;
+                })()}
+
+                {/* labels (avoid clutter if too many weeks) */}
+                {barCount <= 30 && (
+                  <text x={cx} y={padT+plotH+14} textAnchor="middle" fontSize="9" fill="#6b7280">
+                    {r.wk}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* legend */}
+          <g>
+            {catsForChart.map((c, i)=>(
+              <g key={c} transform={`translate(${padL + i*140}, ${H-16})`}>
+                <rect x="0" y="-8" width="10" height="10" fill={colors[i] || "#6b7280"} />
+                <text x="14" y="1" fontSize="10" fill="#374151">{c}</text>
+              </g>
+            ))}
+            <g transform={`translate(${padL + catsForChart.length*140}, ${H-16})`}>
+              <line x1="0" y1="-3" x2="14" y2="-3" stroke="#111827" strokeWidth="1.5" />
+              <circle cx="7" cy="-3" r="2.5" fill="#111827" />
+              <text x="18" y="1" fontSize="10" fill="#374151">Completion %</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+
+      <div className="mt-6 text-sm text-gray-600 mb-2">
+        Week-by-week table (top 10 categories + Others): <span className="text-gray-500">count (completion%)</span>
+      </div>
+
+      <div className="overflow-x-auto border border-gray-200 rounded bg-white">
+        <table className="min-w-[1100px] w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-700 text-white text-xs">
+              <th className="p-2 text-left">Week</th>
+              {[...top10, "Others"].map(c=>(
+                <th key={c} className="p-2 text-center">{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rowsTop10.length === 0 ? (
+              <tr><td className="p-4 text-center text-gray-500" colSpan={12}>No data yet</td></tr>
+            ) : rowsTop10.map(r=>(
+              <tr key={r.wk} className="border-b border-gray-200 text-xs">
+                <td className="p-2 text-left font-medium">{r.wk}</td>
+                {[...top10, "Others"].map(c=>{
+                  const v = r.buckets[c] || { total:0, done:0 };
+                  const pct = v.total ? Math.round((v.done/v.total)*100) : 0;
+                  return <td key={c} className="p-2 text-center">{v.total} ({pct}%)</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /**********************
  * Main Component
  **********************/
 function WeeklyTaskOrganizer() {
-  /* ---------- init + migration ---------- */
+  const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
+
+  // initialize from localStorage or default single week
   const initial = () => {
     const saved = localStorage.getItem('weekly-task-organizer');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
+        let parsed = JSON.parse(saved);
 
-        // migrate / normalize
+        // migrate/normalize cells
         parsed.forEach(week => {
-          week.tasks = week.tasks || makeEmptyTasks();
-          week.tasks.forEach(row => {
-            Object.keys(row).forEach(col => {
-              const cell = row[col];
-              if (!cell) return;
+          week.year = week.year ?? currentYear;
+          week.weekNumber = week.weekNumber ?? currentWeek;
+          week.tasks = Array.isArray(week.tasks) ? week.tasks : makeEmptyTasks();
 
-              // completed -> status
-              if (cell.status === undefined) {
-                cell.status = cell.completed ? 2 : 0;
-                delete cell.completed;
+          week.tasks.forEach(row => {
+            columns.forEach(col => {
+              row[col] = row[col] || { text:"", status:0, ranking:1, subtasks:[] };
+
+              // old completed -> status
+              if (row[col].status === undefined) {
+                row[col].status = row[col].completed ? 2 : 0;
+                delete row[col].completed;
               }
 
-              // ensure fields exist
-              if (cell.text === undefined) cell.text = "";
-              if (cell.ranking === undefined) cell.ranking = 1;
-              if (!Array.isArray(cell.subtasks)) cell.subtasks = [];
+              row[col].ranking = Number(row[col].ranking || 1);
+              row[col].text = String(row[col].text || "");
+              row[col].subtasks = sanitizeSubtasks(row[col].subtasks);
+
+              // If old text had newlines: first line = title, rest -> subtasks (no duplication)
+              if (row[col].text.includes("\n")) {
+                const lines = row[col].text.split("\n").map(s=>s.trim()).filter(Boolean);
+                row[col].text = lines[0] || "";
+                const rest = lines.slice(1).map(t => ({ text: t, done:false }));
+                const merged = [...row[col].subtasks, ...rest];
+                row[col].subtasks = sanitizeSubtasks(merged);
+              }
             });
           });
         });
@@ -126,31 +335,7 @@ function WeeklyTaskOrganizer() {
   const fileInputRef = useRef(null);
   const [copiedKeys, setCopiedKeys] = useState(()=> new Set());
 
-  const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
-
-  /* ---------- analytics helpers ---------- */
-  function extractCategory(text){
-    const m = (text || "").match(/^(.+?)\s-\s.+$/);
-    return m ? m[1].trim() : '(uncategorized)';
-  }
-
-  function collectAnalytics(weeksArr){
-    const stats = {};
-    weeksArr.forEach(w=>{
-      (w.tasks || []).forEach(r=>{
-        Object.values(r).forEach(cell=>{
-          if(!cell?.text?.trim()) return;
-          const cat = extractCategory(cell.text);
-          stats[cat] = stats[cat] || { total:0, done:0 };
-          stats[cat].total++;
-          if(cell.status===2) stats[cat].done++;
-        });
-      });
-    });
-    return stats;
-  }
-
-  /* ---------- colors ---------- */
+  /* colors */
   function getWeeklyObjectivesColor(i){
     if(i<=3) return { bg:"#dc2626", text:"white" };
     if(i<=7) return { bg:"#f97316", text:"white" };
@@ -163,43 +348,20 @@ function WeeklyTaskOrganizer() {
     if(i>=14) return { bg:"#eff6ff", text:"black" };
     return { bg:"#ffffff", text:"black" };
   }
-
-  function isBlankCell(cell){
-    return !cell || !cell.text || cell.text.trim() === "";
-  }
-
-  function syncSubtasksFromText(cell){
-    const lines = (cell.text || "")
-      .split("\n")
-      .map(l => l.trim())
-      .filter(Boolean);
-
-    const prev = Array.isArray(cell.subtasks) ? cell.subtasks : [];
-    const next = lines.map(line => {
-      const found = prev.find(p => p.text === line);
-      return { text: line, done: found ? !!found.done : false };
-    });
-
-    return { ...cell, subtasks: next };
-  }
-
-  function getCellStyle(col, rowIndex, text){
+  function getCellStyle(col, rowIndex, cell){
     const base =
       col === 'weeklyObjectives' ? getWeeklyObjectivesColor(rowIndex) :
       col === 'delegatedTasks' ? { bg:"#ffffff", text:"black" } :
       getDayColumnColor(rowIndex);
 
-    if(!text || text.trim()===""){
-      return {
-        bg: base.bg.includes("#") ? base.bg + "33" : "#f3f4f6",
-        text: "#9ca3af",
-        ghost: true
-      };
+    const has = cellHasContent(cell);
+    if(!has){
+      return { bg: base.bg + "33", text: "#9ca3af", ghost: true };
     }
     return { ...base, ghost: false };
   }
 
-  /* ---------- sorting ---------- */
+  /* sorting + update logic */
   function getCategoryRange(col, rowIndex){
     if(col === 'weeklyObjectives'){
       if(rowIndex <= 3) return [0,3];
@@ -216,7 +378,6 @@ function WeeklyTaskOrganizer() {
 
   function sortColumnByCategory(tasks, col) {
     const newTasks = [...tasks];
-
     const ranges = [
       getCategoryRange(col,0),
       getCategoryRange(col,4),
@@ -226,16 +387,21 @@ function WeeklyTaskOrganizer() {
 
     ranges.forEach(([start,end]) => {
       const seg = [];
-      for (let i = start; i <= end; i++) seg.push({ task: newTasks[i][col], rowIndex: i });
+      for (let i = start; i <= end; i++) seg.push(newTasks[i][col]);
 
-      const filled   = seg.filter(s => (s.task?.text||"").trim() !== "" && s.task.status !== 2);
-      const complete = seg.filter(s => (s.task?.text||"").trim() !== "" && s.task.status === 2);
-      const blanks   = seg.filter(s => (s.task?.text||"").trim() === "");
+      const filled   = seg.filter(c => cellHasContent(c) && c.status !== 2);
+      const complete = seg.filter(c => cellHasContent(c) && c.status === 2);
+      const blanks   = seg.filter(c => !cellHasContent(c));
 
       const merged = [...filled, ...complete, ...blanks];
 
-      merged.forEach((it, idx) => {
-        const normalized = { ...it.task, ranking: idx + 1, subtasks: Array.isArray(it.task.subtasks) ? it.task.subtasks : [] };
+      merged.forEach((cell, idx) => {
+        const normalized = {
+          text: String(cell.text || ""),
+          status: Number(cell.status ?? 0),
+          ranking: idx + 1,
+          subtasks: sanitizeSubtasks(cell.subtasks)
+        };
         newTasks[start + idx] = { ...newTasks[start + idx], [col]: normalized };
       });
     });
@@ -243,20 +409,77 @@ function WeeklyTaskOrganizer() {
     return newTasks;
   }
 
-  /* ---------- task updates ---------- */
+  function toggleSubtask(weekId, rowIndex, col, subIndex){
+    setWeeks(prev => prev.map(w => {
+      if(w.id !== weekId) return w;
+      const tasks = [...w.tasks];
+      const cell = tasks[rowIndex][col];
+      const subs = sanitizeSubtasks(cell.subtasks);
+      if(!subs[subIndex]) return w;
+      subs[subIndex] = { ...subs[subIndex], done: !subs[subIndex].done };
+      tasks[rowIndex] = { ...tasks[rowIndex], [col]: { ...cell, subtasks: subs } };
+      return { ...w, tasks };
+    }));
+  }
+
+  function updateSubtaskText(weekId, rowIndex, col, subIndex, text){
+    setWeeks(prev => prev.map(w => {
+      if(w.id !== weekId) return w;
+      const tasks = [...w.tasks];
+      const cell = tasks[rowIndex][col];
+      const subs = Array.isArray(cell.subtasks) ? [...cell.subtasks] : [];
+      subs[subIndex] = { ...(subs[subIndex] || { done:false }), text };
+      tasks[rowIndex] = { ...tasks[rowIndex], [col]: { ...cell, subtasks: subs } };
+      return { ...w, tasks };
+    }));
+  }
+
+  function addEmptySubtask(weekId, rowIndex, col){
+    setWeeks(prev => prev.map(w => {
+      if(w.id !== weekId) return w;
+      const tasks = [...w.tasks];
+      const cell = tasks[rowIndex][col];
+      const subs = Array.isArray(cell.subtasks) ? [...cell.subtasks] : [];
+      subs.push({ text:"", done:false });
+      tasks[rowIndex] = { ...tasks[rowIndex], [col]: { ...cell, subtasks: subs } };
+      return { ...w, tasks };
+    }));
+  }
+
+  function normalizeCellAndResort(weekId, colToSort){
+    setWeeks(prev => prev.map(w => {
+      if(w.id !== weekId) return w;
+      const normalized = w.tasks.map((row, i)=>({
+        ...row,
+        [colToSort]: {
+          text: String(row[colToSort]?.text || ""),
+          status: Number(row[colToSort]?.status ?? 0),
+          ranking: Number(row[colToSort]?.ranking ?? (i+1)),
+          subtasks: sanitizeSubtasks(row[colToSort]?.subtasks)
+        }
+      }));
+      const sorted = sortColumnByCategory(normalized, colToSort);
+      return { ...w, tasks: sorted };
+    }));
+  }
+
   function updateTask(weekId, rowIndex, col, field, value) {
     setWeeks(prev => prev.map(w => {
       if (w.id !== weekId) return w;
-
       let newTasks = [...w.tasks];
-      const oldCell = newTasks[rowIndex][col] || { text:"", status:0, ranking: rowIndex+1, subtasks:[] };
 
-      newTasks[rowIndex] = {
-        ...newTasks[rowIndex],
-        [col]: { ...oldCell, [field]: value }
-      };
+      const prevCell = newTasks[rowIndex][col] || { text:"", status:0, ranking: rowIndex+1, subtasks:[] };
+      let nextCell = { ...prevCell, [field]: value };
 
-      // only auto-sort if not typing text
+      // keep title single-line
+      if(field === "text") nextCell.text = String(nextCell.text || "").replace(/\n/g, " ");
+
+      // sanitize subtasks whenever touching the cell
+      nextCell.subtasks = sanitizeSubtasks(nextCell.subtasks);
+
+      newTasks[rowIndex] = { ...newTasks[rowIndex], [col]: nextCell };
+
+      // do not auto-sort while typing title text
       if (field !== "text") {
         newTasks = sortColumnByCategory(newTasks, col);
       }
@@ -265,22 +488,7 @@ function WeeklyTaskOrganizer() {
     }));
   }
 
-  function toggleSubtask(weekId, rowIndex, col, subIndex){
-    setWeeks(prev => prev.map(w => {
-      if(w.id !== weekId) return w;
-      const tasks = [...w.tasks];
-      const cell = tasks[rowIndex][col];
-      const subs = [...(cell.subtasks || [])];
-      subs[subIndex] = { ...subs[subIndex], done: !subs[subIndex].done };
-      tasks[rowIndex] = {
-        ...tasks[rowIndex],
-        [col]: { ...cell, subtasks: subs }
-      };
-      return { ...w, tasks };
-    }));
-  }
-
-  /* ---------- autosize textareas ---------- */
+  /* Auto-resize all title textareas on load/refresh */
   useEffect(() => {
     Object.values(inputRefs.current).forEach(el => {
       if (el) {
@@ -290,38 +498,7 @@ function WeeklyTaskOrganizer() {
     });
   }, [weeks]);
 
-  /* ---------- localStorage autosave ---------- */
-  useEffect(()=> {
-    try { localStorage.setItem('weekly-task-organizer', JSON.stringify(weeks)); } catch {}
-  }, [weeks]);
-
-  /* ---------- auto-download 2 minutes after last change ---------- */
-  function saveToFile(){
-    const blob = new Blob([JSON.stringify(weeks, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    const today = new Date().toISOString().split('T')[0];
-    a.download = `weekly-organizer-${today}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  useEffect(() => {
-    if (!weeks || weeks.length === 0) return;
-    const timer = setTimeout(() => { saveToFile(); }, 2 * 60 * 1000);
-    return () => clearTimeout(timer);
-  }, [weeks]);
-
-  function loadFromFile(e){
-    const f = e.target.files?.[0]; if(!f) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      try { setWeeks(JSON.parse(ev.target.result)); } catch { alert('Invalid file'); }
-    };
-    r.readAsText(f);
-  }
-
-  /* ---------- drag highlight reset ---------- */
+  // reset drag highlight if drag ends outside a cell
   useEffect(() => {
     const onDropAnywhere = () => setDragOverRow(null);
     const onDragEnd = () => setDragOverRow(null);
@@ -333,7 +510,7 @@ function WeeklyTaskOrganizer() {
     };
   }, []);
 
-  /* ---------- drag/drop (move or ctrl-copy) ---------- */
+  /* drag/drop: move or copy across columns (CTRL = copy) */
   function handleDrop(e, weekId, targetRow, targetCol) {
     e.preventDefault();
     if (!draggedItem || draggedItem.weekId !== weekId) {
@@ -355,7 +532,7 @@ function WeeklyTaskOrganizer() {
 
       const target = tasks[targetRow][targetCol];
 
-      // clear source only if move
+      // clear source if move
       if (!isCopy) {
         tasks[srcRow] = {
           ...tasks[srcRow],
@@ -363,27 +540,31 @@ function WeeklyTaskOrganizer() {
         };
       }
 
-      // if target blank -> place directly
+      // If target is blank, just fill it.
+      // If target is filled, push down from targetRow.
       if (isBlankCell(target)) {
         tasks[targetRow] = {
           ...tasks[targetRow],
-          [targetCol]: { ...dragged, ranking: targetRow+1, subtasks: Array.isArray(dragged.subtasks) ? dragged.subtasks : [] }
+          [targetCol]: { ...dragged, ranking: targetRow+1, subtasks: sanitizeSubtasks(dragged.subtasks) }
         };
       } else {
-        // shift down from targetRow to bottom in targetCol
-        for (let i = tasks.length-1; i > targetRow; i--) {
+        for (let i = tasks.length - 1; i > targetRow; i--) {
           tasks[i] = {
             ...tasks[i],
-            [targetCol]: { ...tasks[i-1][targetCol], ranking:i+1 }
+            [targetCol]: {
+              ...tasks[i-1][targetCol],
+              ranking: i+1,
+              subtasks: sanitizeSubtasks(tasks[i-1][targetCol]?.subtasks)
+            }
           };
         }
         tasks[targetRow] = {
           ...tasks[targetRow],
-          [targetCol]: { ...dragged, ranking: targetRow+1, subtasks: Array.isArray(dragged.subtasks) ? dragged.subtasks : [] }
+          [targetCol]: { ...dragged, ranking: targetRow+1, subtasks: sanitizeSubtasks(dragged.subtasks) }
         };
       }
 
-      // normalize affected columns
+      // normalize / reorg both columns
       tasks = sortColumnByCategory(tasks, targetCol);
       if (!isCopy) tasks = sortColumnByCategory(tasks, srcCol);
 
@@ -393,82 +574,108 @@ function WeeklyTaskOrganizer() {
     setDraggedItem(null);
   }
 
-  /* ---------- keyboard nav ---------- */
-  function focusCell(weekId, row, col){
-    if(row < 0 || col < 0 || col >= columns.length || row >= 16) return;
-    const key = `${weekId}-${row}-${col}`;
+  /* keyboard nav */
+  function focusCell(weekId, row, colIndex){
+    if(row < 0 || colIndex < 0 || colIndex >= columns.length || row >= 16) return;
+    const key = `${weekId}-${row}-${colIndex}`;
     const el = inputRefs.current[key];
     if(el) el.focus();
   }
 
-  function handleKeyDown(e, weekId, row, col){
+  function handleKeyDown(e, weekId, row, colIndex){
+    // Enter: force reorg, then move focus down
     if(e.key === 'Enter' && !e.shiftKey && !e.altKey){
       e.preventDefault();
-      // force reorg before moving focus
-      setWeeks(prev => prev.map(w => {
-        if(w.id !== weekId) return w;
-        let newTasks = sortColumnByCategory([...w.tasks], columns[col]);
-        return { ...w, tasks: newTasks };
-      }));
-      focusCell(weekId, row+1, col);
+      const col = columns[colIndex];
+      normalizeCellAndResort(weekId, col);
+      focusCell(weekId, row+1, colIndex);
+      return;
     }
-    else if(e.key === 'Enter' && e.altKey){
+
+    // Shift+Enter: move up
+    if(e.key === 'Enter' && e.shiftKey){
       e.preventDefault();
-      const el = e.target;
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      el.value = el.value.slice(0, start) + '\n' + el.value.slice(end);
-      el.selectionStart = el.selectionEnd = start + 1;
+      focusCell(weekId, row-1, colIndex);
+      return;
     }
-    else if(e.key === 'Enter' && e.shiftKey){
+
+    // Tab navigation
+    if(e.key === 'Tab' && !e.shiftKey){
       e.preventDefault();
-      focusCell(weekId, row-1, col);
+      focusCell(weekId, row, colIndex+1);
+      return;
     }
-    else if(e.key === 'Tab' && !e.shiftKey){
+    if(e.key === 'Tab' && e.shiftKey){
       e.preventDefault();
-      focusCell(weekId, row, col+1);
-    }
-    else if(e.key === 'Tab' && e.shiftKey){
-      e.preventDefault();
-      focusCell(weekId, row, col-1);
+      focusCell(weekId, row, colIndex-1);
+      return;
     }
   }
 
-  /* ---------- add week ---------- */
+  /* add new week */
   function addNewWeek(){
     const prev = weeks[0];
     const nowYear = new Date().getFullYear();
     const nextNum = prev && typeof prev.weekNumber === 'number' ? prev.weekNumber + 1 : currentWeek;
-
     const newWeek = { id: Date.now(), weekNumber: nextNum, year: nowYear, tasks: makeEmptyTasks() };
 
     if(prev){
-      const openDel = prev.tasks.filter(t => t.delegatedTasks.text.trim() && t.delegatedTasks.status !== 2);
-      const openObj = prev.tasks.filter(t => t.weeklyObjectives.text.trim() && t.weeklyObjectives.status !== 2);
+      const openDel = prev.tasks.filter(t => (t.delegatedTasks.text || "").trim() && t.delegatedTasks.status !== 2);
+      const openObj = prev.tasks.filter(t => (t.weeklyObjectives.text || "").trim() && t.weeklyObjectives.status !== 2);
 
       openDel.forEach((t, idx) => {
-        if(idx < 16) newWeek.tasks[idx].delegatedTasks = { ...t.delegatedTasks, status:0, subtasks: Array.isArray(t.delegatedTasks.subtasks)? t.delegatedTasks.subtasks: [] };
+        if(idx < 16) newWeek.tasks[idx].delegatedTasks = { ...t.delegatedTasks, status:0, subtasks: sanitizeSubtasks(t.delegatedTasks.subtasks) };
       });
       openObj.forEach((t, idx) => {
-        if(idx < 16) newWeek.tasks[idx].weeklyObjectives = { ...t.weeklyObjectives, status:0, subtasks: Array.isArray(t.weeklyObjectives.subtasks)? t.weeklyObjectives.subtasks: [] };
+        if(idx < 16) newWeek.tasks[idx].weeklyObjectives = { ...t.weeklyObjectives, status:0, subtasks: sanitizeSubtasks(t.weeklyObjectives.subtasks) };
       });
     }
 
     setWeeks([newWeek, ...weeks]);
   }
 
-  /* ---------- week number edit ---------- */
+  /* save/load */
+  function saveToFile(){
+    const blob = new Blob([JSON.stringify(weeks, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const today = new Date().toISOString().split('T')[0];
+    a.download = `weekly-organizer-${today}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  function loadFromFile(e){
+    const f = e.target.files?.[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try { setWeeks(JSON.parse(ev.target.result)); } catch { alert('Invalid file'); }
+    };
+    r.readAsText(f);
+  }
+
+  /* localStorage autosave */
+  useEffect(()=> {
+    try { localStorage.setItem('weekly-task-organizer', JSON.stringify(weeks)); } catch {}
+  }, [weeks]);
+
+  /* auto-download 2 minutes after last change */
+  useEffect(() => {
+    if (!weeks || weeks.length === 0) return;
+    const timer = setTimeout(() => { saveToFile(); }, 2 * 60 * 1000);
+    return () => clearTimeout(timer);
+  }, [weeks]);
+
+  /* week number edit */
   function updateWeekNumber(weekId, newNumber){
     setWeeks(prev => prev.map(w => w.id === weekId ? { ...w, weekNumber: newNumber } : w));
   }
 
-  /* ---------- today detection ---------- */
+  /* today detection */
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
 
-  /* ---------- summary ---------- */
+  /* summary */
   const [summaryFilter, setSummaryFilter] = useState('All');
-
   const summaryRows = useMemo(() => {
     const rows = [];
     const mapColName = {
@@ -485,7 +692,7 @@ function WeeklyTaskOrganizer() {
       columns.forEach(col => {
         w.tasks.forEach((t, idx) => {
           const cell = t[col];
-          if (cell.text.trim() && cell.status !== 2) {
+          if((cell?.text || "").trim() && cell.status !== 2){
             rows.push({
               key: `${w.id}-${col}-${idx}`,
               weekId: w.id,
@@ -514,7 +721,8 @@ function WeeklyTaskOrganizer() {
     const latest = weeks[0];
     const nowYear = new Date().getFullYear();
     const nextNum = latest && typeof latest.weekNumber === 'number' ? latest.weekNumber + 1 : currentWeek;
-    let nextWeek = weeks.find(w => w.weekNumber === nextNum && w.year === nowYear);
+    let nextWeek = weeks.find(w => w.weekNumber === nextNum && (w.year || nowYear) === nowYear);
+
     if(!nextWeek){
       nextWeek = { id: Date.now(), weekNumber: nextNum, year: nowYear, tasks: makeEmptyTasks() };
       setWeeks(prev => [nextWeek, ...prev]);
@@ -536,6 +744,7 @@ function WeeklyTaskOrganizer() {
       });
       return { ...w, tasks };
     }));
+
     setCopiedKeys(prev => {
       const next = new Set(prev);
       summaryRows.forEach(r => next.add(r.key));
@@ -591,7 +800,6 @@ function WeeklyTaskOrganizer() {
           </div>
         </div>
 
-        {/* ---------- ORGANIZER ---------- */}
         {activeTab==='organizer' ? (
           <div>
             {weeks.map((week)=>{
@@ -606,7 +814,7 @@ function WeeklyTaskOrganizer() {
                 new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+4)
               ];
 
-              // compute which weekday column is "today" (Mon..Fri = indices 2..6)
+              // Mon..Fri = indices 2..6
               let todayColIndex = -1;
               dates.forEach((d,i)=>{
                 const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -617,9 +825,8 @@ function WeeklyTaskOrganizer() {
                 <table key={week.id} className="w-full border-collapse mb-2">
                   <thead>
                     <tr>
-                      {/* first header cell */}
                       <th
-                        className="text-white text-center px-2 py-1 text-xs"
+                        className="text-white text-center px-1 py-[2px] text-xs"
                         style={{
                           background: todayColIndex===0 ? '#3b82f6' : '#374151',
                           borderLeft: todayColIndex===0 ? '3px solid #2563eb' : '0',
@@ -638,15 +845,10 @@ function WeeklyTaskOrganizer() {
                         / Deleg.
                       </th>
 
-                      {/* weekly objectives */}
-                      <th
-                        className="text-white text-center px-2 py-1 text-xs"
-                        style={{ background:'#374151', whiteSpace:'nowrap' }}
-                      >
+                      <th className="text-white text-center px-2 py-1 text-xs" style={{ background:'#374151', whiteSpace:'nowrap' }}>
                         Weekly Objectives
                       </th>
 
-                      {/* weekdays */}
                       {["Monday","Tuesday","Wednesday","Thursday","Friday"].map((day,i)=>{
                         const idx = i + 2;
                         const isToday = idx === todayColIndex;
@@ -671,8 +873,8 @@ function WeeklyTaskOrganizer() {
                   <tbody>
                     {week.tasks.map((task,rowIndex)=>(
                       <tr key={rowIndex}>
-                        {["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"].map((col,colIndex)=>{
-                          const style = getCellStyle(col, rowIndex, task[col].text);
+                        {columns.map((col,colIndex)=>{
+                          const style = getCellStyle(col, rowIndex, task[col]);
                           const isToday = colIndex === todayColIndex;
                           const leftBorder = colIndex === 0 ? '0' : '1px solid rgba(0,0,0,0.06)';
                           const cellBorderLeft = isToday ? '3px solid #2563eb' : leftBorder;
@@ -681,15 +883,9 @@ function WeeklyTaskOrganizer() {
                           return (
                             <td
                               key={col}
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                setDragOverRow({ weekId: week.id, rowIndex, col });
-                              }}
+                              onDragOver={(e) => { e.preventDefault(); setDragOverRow({ weekId: week.id, rowIndex, col }); }}
                               onDragLeave={() => setDragOverRow(null)}
-                              onDrop={(e) => {
-                                handleDrop(e, week.id, rowIndex, col);
-                                setDragOverRow(null);
-                              }}
+                              onDrop={(e) => { handleDrop(e, week.id, rowIndex, col); setDragOverRow(null); }}
                               style={{
                                 backgroundColor: style.bg,
                                 borderLeft: cellBorderLeft,
@@ -706,15 +902,15 @@ function WeeklyTaskOrganizer() {
                                 outlineOffset: -2
                               }}
                             >
-                              <div style={{ display:'flex', alignItems:'flex-start', gap:4 }}>
-                                {/* Controls */}
+                              <div style={{ display:'flex', alignItems:'flex-start', gap:6 }}>
+                                {/* Control stack */}
                                 <div style={{
                                   width: 18,
                                   display: 'flex',
                                   flexDirection: 'column',
                                   alignItems: 'center',
                                   justifyContent: 'flex-start',
-                                  gap: 2,
+                                  gap: 3,
                                   opacity: style.ghost ? 0.4 : 1
                                 }}>
                                   <input
@@ -723,10 +919,7 @@ function WeeklyTaskOrganizer() {
                                     value={task[col].ranking}
                                     draggable
                                     onDragStart={()=>setDraggedItem({weekId:week.id,rowIndex,col})}
-                                    onChange={(e)=>updateTask(
-                                      week.id,rowIndex,col,'ranking',
-                                      parseInt(e.target.value)||1
-                                    )}
+                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'ranking', parseInt(e.target.value)||1)}
                                     style={{
                                       width: 16,
                                       height: 14,
@@ -742,16 +935,16 @@ function WeeklyTaskOrganizer() {
                                     }}
                                   />
 
-                                  {/* 3-state status */}
+                                  {/* small status box (default white) */}
                                   <div
                                     onClick={() => {
-                                      const nextStatus = ((task[col].status ?? 0) + 1) % 3; // 0→1→2→0
+                                      const nextStatus = ((task[col].status ?? 0) + 1) % 3; // 0->1->2->0
                                       updateTask(week.id, rowIndex, col, 'status', nextStatus);
                                     }}
                                     style={{
-                                      width: 12,   /* small as reasonably possible */
-                                      height: 12,  /* small as reasonably possible */
-                                      borderRadius: 3,
+                                      width: 12,
+                                      height: 12,
+                                      borderRadius: 2,
                                       border: "1px solid #ccc",
                                       background:
                                         task[col].status === 0 ? "#fff" :
@@ -759,29 +952,43 @@ function WeeklyTaskOrganizer() {
                                         "#22c55e",
                                       cursor: "pointer"
                                     }}
+                                    title="Click: open → ongoing → done"
                                   />
                                 </div>
 
-                                {/* Text + Subtasks */}
+                                {/* Title + Subtasks */}
                                 <div style={{ flex:1 }}>
+                                  {/* Title (single line) */}
                                   <textarea
                                     value={task[col].text}
-                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'text',e.target.value)}
-                                    onKeyDown={(e)=>handleKeyDown(e,week.id,rowIndex,colIndex)}
-                                    onBlur={(e)=>{
+                                    onChange={(e)=>updateTask(week.id,rowIndex,col,'text', e.target.value.replace(/\n/g,' '))}
+                                    onKeyDown={(e)=>{
+                                      if(e.key === 'Enter' && e.altKey){
+                                        e.preventDefault();
+                                        addEmptySubtask(week.id, rowIndex, col);
+                                        return;
+                                      }
+                                      handleKeyDown(e, week.id, rowIndex, colIndex);
+                                    }}
+                                    onBlur={()=>{
+                                      // finalize: trim subtasks + resort this column
                                       setWeeks(prev => prev.map(w=>{
                                         if(w.id !== week.id) return w;
-                                        const tasks2 = [...w.tasks];
-                                        const cell = tasks2[rowIndex][col];
-                                        tasks2[rowIndex] = {
-                                          ...tasks2[rowIndex],
-                                          [col]: syncSubtasksFromText({ ...cell, text: e.target.value })
+                                        const tasks = [...w.tasks];
+                                        const cell = tasks[rowIndex][col];
+                                        tasks[rowIndex] = {
+                                          ...tasks[rowIndex],
+                                          [col]: {
+                                            ...cell,
+                                            text: String(cell.text || "").trim(),
+                                            subtasks: sanitizeSubtasks(cell.subtasks)
+                                          }
                                         };
-                                        return { ...w, tasks: tasks2 };
+                                        const sorted = sortColumnByCategory(tasks, col);
+                                        return { ...w, tasks: sorted };
                                       }));
                                     }}
                                     ref={el=>{
-                                      if(!inputRefs.current) inputRefs.current={};
                                       inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el;
                                     }}
                                     placeholder={style.ghost ? "..." : "Task..."}
@@ -792,7 +999,7 @@ function WeeklyTaskOrganizer() {
                                       overflow:'hidden',
                                       background:'transparent',
                                       color: task[col].status === 2
-                                        ? ((style.bg || "").includes("#dc2626") || (style.bg || "").includes("#f97316") ? "#fff" : "#6b7280")
+                                        ? (((style.bg || "").includes("#dc2626") || (style.bg || "").includes("#f97316")) ? "#fff" : "#6b7280")
                                         : style.text,
                                       textDecoration: task[col].status === 2 ? "line-through" : "none",
                                       border:'none',
@@ -807,10 +1014,11 @@ function WeeklyTaskOrganizer() {
                                     }}
                                   />
 
+                                  {/* Subtasks (each new line is a subtask; no duplicated title) */}
                                   {Array.isArray(task[col].subtasks) && task[col].subtasks.length > 0 && (
-                                    <div style={{ marginTop: 2, display:'flex', flexDirection:'column', gap:2 }}>
+                                    <div style={{ marginTop: 4, display:'flex', flexDirection:'column', gap:4 }}>
                                       {task[col].subtasks.map((s, si)=>(
-                                        <div key={si} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                                        <div key={si} style={{ display:'flex', alignItems:'center', gap:8 }}>
                                           <div
                                             onClick={()=>toggleSubtask(week.id, rowIndex, col, si)}
                                             style={{
@@ -819,18 +1027,39 @@ function WeeklyTaskOrganizer() {
                                               borderRadius: 2,
                                               border: '1px solid #9ca3af',
                                               background: s.done ? '#22c55e' : '#fff',
-                                              cursor: 'pointer'
+                                              cursor: 'pointer',
+                                              flex: '0 0 auto'
+                                            }}
+                                            title="Toggle subtask"
+                                          />
+                                          <input
+                                            value={s.text}
+                                            onChange={(e)=>updateSubtaskText(week.id, rowIndex, col, si, e.target.value)}
+                                            onBlur={()=>{
+                                              // remove empty subtasks when leaving
+                                              setWeeks(prev => prev.map(w=>{
+                                                if(w.id !== week.id) return w;
+                                                const tasks = [...w.tasks];
+                                                const cell = tasks[rowIndex][col];
+                                                tasks[rowIndex] = {
+                                                  ...tasks[rowIndex],
+                                                  [col]: { ...cell, subtasks: sanitizeSubtasks(cell.subtasks) }
+                                                };
+                                                return { ...w, tasks };
+                                              }));
+                                            }}
+                                            placeholder="Subtask..."
+                                            style={{
+                                              width:'100%',
+                                              background:'transparent',
+                                              border:'none',
+                                              outline:'none',
+                                              fontSize:12,
+                                              lineHeight:'1.2rem',
+                                              color: s.done ? '#6b7280' : style.text,
+                                              textDecoration: s.done ? 'line-through' : 'none'
                                             }}
                                           />
-                                          <div
-                                            style={{
-                                              fontSize: 11,
-                                              textDecoration: s.done ? 'line-through' : 'none',
-                                              color: s.done ? '#6b7280' : style.text
-                                            }}
-                                          >
-                                            {s.text}
-                                          </div>
                                         </div>
                                       ))}
                                     </div>
@@ -848,102 +1077,63 @@ function WeeklyTaskOrganizer() {
             })}
           </div>
         ) : activeTab === 'analytics' ? (
-
-        /* ---------- ANALYTICS ---------- */
-        <div className="w-full p-3">
-          {(() => {
-            const stats = collectAnalytics(weeks);
-            const entries = Object.entries(stats).sort((a,b)=> (b[1].total - a[1].total));
-            return (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gray-700 text-white text-sm">
-                      <th className="p-2 text-left">Category</th>
-                      <th className="p-2 text-center">Total</th>
-                      <th className="p-2 text-center">Done</th>
-                      <th className="p-2 text-center">%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.length === 0 ? (
-                      <tr>
-                        <td colSpan="4" className="p-4 text-center text-gray-500">No data yet</td>
-                      </tr>
-                    ) : entries.map(([k,v])=>(
-                      <tr key={k} className="border-b border-gray-200">
-                        <td className="p-2">{k}</td>
-                        <td className="p-2 text-center">{v.total}</td>
-                        <td className="p-2 text-center">{v.done}</td>
-                        <td className="p-2 text-center">
-                          {v.total ? Math.round(v.done / v.total * 100) : 0}%
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
-          })()}
-        </div>
-
+          <AnalyticsView weeks={weeks} />
         ) : (
+          /* ---------- SUMMARY TAB ---------- */
+          <div className="w-full p-3">
+            <div className="flex items-center gap-3 mb-3">
+              <label className="text-sm text-gray-600">Filter:</label>
+              <select
+                value={summaryFilter}
+                onChange={(e)=>setSummaryFilter(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+              >
+                <option>All</option>
+                <option>Delegated</option>
+                <option>Objectives</option>
+                <option>Days</option>
+              </select>
 
-        /* ---------- SUMMARY ---------- */
-        <div className="w-full p-3">
-          <div className="flex items-center gap-3 mb-3">
-            <label className="text-sm text-gray-600">Filter:</label>
-            <select
-              value={summaryFilter}
-              onChange={(e)=>setSummaryFilter(e.target.value)}
-              className="border border-gray-300 rounded px-2 py-1 text-sm"
-            >
-              <option>All</option>
-              <option>Delegated</option>
-              <option>Objectives</option>
-              <option>Days</option>
-            </select>
+              <button
+                onClick={addAllToNextWeekFromSummary}
+                className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded"
+                title="Add all open tasks below to the next week's Weekly Objectives (creates it if needed). Tasks will fill from the bottom."
+              >
+                Add All to Next Week
+              </button>
+            </div>
 
-            <button
-              onClick={addAllToNextWeekFromSummary}
-              className="ml-auto flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded"
-              title="Add all open tasks below to the next week's Weekly Objectives (creates it if needed). Tasks will fill from the bottom."
-            >
-              Add All to Next Week
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse:'collapse' }}>
-              <thead>
-                <tr className="bg-gray-700 text-white text-sm">
-                  <th className="p-2 text-center">Week</th>
-                  <th className="p-2 text-center">Year</th>
-                  <th className="p-2 text-center">Column</th>
-                  <th className="p-2 text-center">Task</th>
-                  <th className="p-2 text-center">Copied</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summaryRows.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="p-4 text-center text-gray-500">No open tasks 🎉</td>
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ borderCollapse:'collapse' }}>
+                <thead>
+                  <tr className="bg-gray-700 text-white text-sm">
+                    <th className="p-2 text-center">Week</th>
+                    <th className="p-2 text-center">Year</th>
+                    <th className="p-2 text-center">Column</th>
+                    <th className="p-2 text-center">Task</th>
+                    <th className="p-2 text-center">Copied</th>
                   </tr>
-                ) : summaryRows.map(row => (
-                  <tr key={row.key} className="border-b border-gray-200">
-                    <td className="p-2 text-center">{row.weekNumber}</td>
-                    <td className="p-2 text-center">{row.year}</td>
-                    <td className="p-2 text-center">{row.colLabel}</td>
-                    <td className="p-2">{row.text}</td>
-                    <td className="p-2 text-center">{copiedKeys.has(row.key) ? '✓' : ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {summaryRows.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="p-4 text-center text-gray-500">No open tasks 🎉</td>
+                    </tr>
+                  ) : summaryRows.map(row => (
+                    <tr key={row.key} className="border-b border-gray-200">
+                      <td className="p-2 text-center">{row.weekNumber}</td>
+                      <td className="p-2 text-center">{row.year}</td>
+                      <td className="p-2 text-center">{row.colLabel}</td>
+                      <td className="p-2">{row.text}</td>
+                      <td className="p-2 text-center">{copiedKeys.has(row.key) ? '✓' : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-
         )}
+
       </div>
     </div>
   );
