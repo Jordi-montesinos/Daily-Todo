@@ -884,7 +884,7 @@ useEffect(() => {
         {/* ORGANIZER */}
         {activeTab === 'organizer' && (
           <div>
-              {(showAllWeeks ? weeks : weeks.slice(0,1)).map((week)=>{
+              {(showAllWeeks ? weeks : weeks.slice(0,4)).map((week)=>{
 
               const year = week.year || currentYear;
               const wkNum = Number(week.weekNumber) || currentWeek;
