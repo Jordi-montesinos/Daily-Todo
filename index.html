@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"> 
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -190,6 +190,9 @@ function WeeklyTaskOrganizer() {
 
   const [weeks, setWeeks] = useState(initial);
   const [activeTab, setActiveTab] = useState('organizer');
+  const [showAllWeeks, setShowAllWeeks] = useState(false);
+  const saveDebounceRef = useRef(null);
+
 
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverCell, setDragOverCell] = useState(null);
@@ -306,26 +309,35 @@ function WeeklyTaskOrganizer() {
   /* -----------------------------
      Auto-resize textareas
 ------------------------------ */
-  useEffect(() => {
-    Object.values(inputRefs.current).forEach(el => {
-      if(el){
-        el.style.height = 'auto';
-        el.style.height = el.scrollHeight + 'px';
-      }
-    });
-  }, [weeks]);
 
-  /* -----------------------------
-     LocalStorage autosave
+
+/* -----------------------------
+   LocalStorage autosave (DEBOUNCED)
 ------------------------------ */
-  useEffect(()=> {
+useEffect(() => {
+  if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+
+  saveDebounceRef.current = setTimeout(() => {
     try { localStorage.setItem('weekly-task-organizer', JSON.stringify(weeks)); } catch {}
-  }, [weeks]);
+  }, 600);
+
+  return () => {
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+  };
+}, [weeks]);
+
+
 
   /* -----------------------------
      Save-to-file debounced (only if real changes since last save)
 ------------------------------ */
   const lastSavedFingerprint = useRef("");
+  useEffect(() => {
+  // baseline fingerprint so we don't auto-download if nothing changed after load
+  lastSavedFingerprint.current = computeFingerprint(weeks);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
   function computeFingerprint(obj){
     try { return JSON.stringify(obj); } catch { return String(Date.now()); }
   }
@@ -853,16 +865,27 @@ function WeeklyTaskOrganizer() {
             <button onClick={()=>fileInputRef.current?.click()} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded">Load</button>
             <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={loadFromFile} />
 
-            {activeTab==='organizer' && (
-              <button onClick={addNewWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Add Week</button>
-            )}
+           {activeTab==='organizer' && (
+  <>
+    <button
+      onClick={()=>setShowAllWeeks(v=>!v)}
+      className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded"
+      title="Rendering all weeks slows typing. Keep this off for best performance."
+    >
+      {showAllWeeks ? 'Show latest week' : 'Show all weeks'}
+    </button>
+    <button onClick={addNewWeek} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Add Week</button>
+  </>
+)}
+
           </div>
         </div>
 
         {/* ORGANIZER */}
         {activeTab === 'organizer' && (
           <div>
-            {weeks.map((week)=>{
+              {(showAllWeeks ? weeks : weeks.slice(0,1)).map((week)=>{
+
               const year = week.year || currentYear;
               const wkNum = Number(week.weekNumber) || currentWeek;
               const monday = getDateOfISOWeek(wkNum, year);
