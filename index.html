@@ -198,6 +198,15 @@ function WeeklyTaskOrganizer() {
   const [dragOverCell, setDragOverCell] = useState(null);
 
   const inputRefs = useRef({});
+  function resizeTextarea(el){
+  if(!el) return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
+function resizeAllTextareas(){
+  Object.values(inputRefs.current).forEach(el => resizeTextarea(el));
+}
   const fileInputRef = useRef(null);
 
   const columns = ["delegatedTasks","weeklyObjectives","monday","tuesday","wednesday","thursday","friday"];
@@ -326,7 +335,12 @@ useEffect(() => {
   };
 }, [weeks]);
 
-
+useEffect(() => {
+  // Run after DOM paint to ensure scrollHeight is correct
+  requestAnimationFrame(() => {
+    resizeAllTextareas();
+  });
+}, [weeks, showAllWeeks, activeTab]);
 
   /* -----------------------------
      Save-to-file debounced (only if real changes since last save)
@@ -1060,8 +1074,10 @@ useEffect(() => {
                                     onChange={(e)=>updateTask(week.id,rowIndex,col,'text',e.target.value)}
                                     onKeyDown={(e)=>handleKeyDown(e, week.id, rowIndex, colIndex)}
                                     onBlur={(e)=>onCellBlur(week.id, rowIndex, col, e.target.value)}
-                                    ref={el=>{ inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`]=el; }}
-                                    placeholder={style.ghost ? "..." : "Task..."}
+ref={el=>{
+  inputRefs.current[`${week.id}-${rowIndex}-${colIndex}`] = el;
+  resizeTextarea(el); // important: correct height on mount / rerender
+}}                                    placeholder={style.ghost ? "..." : "Task..."}
                                     style={{
                                       width:'100%',
                                       minHeight:20,
@@ -1078,10 +1094,7 @@ useEffect(() => {
                                       lineHeight:'1.2rem',
                                       fontStyle: style.ghost ? 'italic' : 'normal'
                                     }}
-                                    onInput={(e)=>{
-                                      e.target.style.height='auto';
-                                      e.target.style.height=e.target.scrollHeight+'px';
-                                    }}
+                                    onInput={(e)=> resizeTextarea(e.target)}
                                   />
                                 </div>
 
