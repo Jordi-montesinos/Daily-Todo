@@ -509,11 +509,12 @@ useEffect(() => {
     }
 
     if(e.key === 'Enter' && !e.shiftKey){
-      e.preventDefault();
-      sortOneColumnNow(weekId, col);
-      focusCell(weekId, row+1, colIdx);
-      return;
-    }
+  e.preventDefault();
+  // Do NOT sort here (prevents reordering under the cursor).
+  // Sorting happens onBlur when the cell loses focus.
+  focusCell(weekId, row+1, colIdx);
+  return;
+}
 
     if(e.key === 'Enter' && e.shiftKey){
       e.preventDefault();
