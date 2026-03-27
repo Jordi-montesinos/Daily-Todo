@@ -57,7 +57,22 @@ function getDateOfISOWeek(week, year) {
   monday.setUTCDate(jan4.getUTCDate() - (jan4Day - 1) + (week - 1) * 7);
   return new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
 }
+function getISOWeeksInYear(year) {
+  // Dec 28 is always in the last ISO week of a year
+  return getISOWeekAndYear(new Date(year, 11, 28))[0];
+}
 
+function clampISOWeek(week, year) {
+  const maxWeek = getISOWeeksInYear(year);
+  if (!Number.isFinite(week)) return 1;
+  return Math.max(1, Math.min(maxWeek, week));
+}
+
+function getNextISOWeekYear(week, year) {
+  const maxWeek = getISOWeeksInYear(year);
+  if (week < maxWeek) return { weekNumber: week + 1, year };
+  return { weekNumber: 1, year: year + 1 };
+}
 function formatDayShort(d) {
   const dd = String(d.getDate()).padStart(2,'0');
   const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -213,9 +228,10 @@ function resizeAllTextareas(){
   const dayColsForAnalytics = ["monday","tuesday","wednesday","thursday","friday"];
 
   /* ---------- analytics controls ---------- */
-  const [stackMode, setStackMode] = useState('all'); // all | done | open
-  const [rangeFrom, setRangeFrom] = useState(0);
-  const [rangeTo, setRangeTo] = useState(0);
+  const [stackMode, setStackMode] = useState('all'); // all | done | open | started
+const [analyticsPeriod, setAnalyticsPeriod] = useState('week'); // week | quarter
+const [rangeFrom, setRangeFrom] = useState(0);
+const [rangeTo, setRangeTo] = useState(0);
 
   /* ---------- chart refs ---------- */
   const mainChartRef = useRef(null);
@@ -399,26 +415,59 @@ useEffect(() => {
      Add new week
 ------------------------------ */
   function addNewWeek(){
-    const prev = weeks[0];
-    const nowYear = new Date().getFullYear();
-    const nextNum = prev && typeof prev.weekNumber === 'number' ? prev.weekNumber + 1 : currentWeek;
+  const prev = weeks[0];
 
-    const newWeek = { id: Date.now(), weekNumber: nextNum, year: nowYear, tasks: makeEmptyTasks() };
+  let nextWeekNumber = currentWeek;
+  let nextYear = currentYear;
 
-    if(prev){
-      const openDel = prev.tasks.filter(t => t.delegatedTasks.text.trim() && t.delegatedTasks.status !== 2);
-      const openObj = prev.tasks.filter(t => t.weeklyObjectives.text.trim() && t.weeklyObjectives.status !== 2);
-
-      openDel.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].delegatedTasks = { ...t.delegatedTasks, status:0 }; });
-      openObj.forEach((t, idx) => { if(idx < 16) newWeek.tasks[idx].weeklyObjectives = { ...t.weeklyObjectives, status:0 }; });
-    }
-
-    setWeeks([newWeek, ...weeks]);
+  if (prev && typeof prev.weekNumber === 'number' && typeof prev.year === 'number') {
+    const nextISO = getNextISOWeekYear(prev.weekNumber, prev.year);
+    nextWeekNumber = nextISO.weekNumber;
+    nextYear = nextISO.year;
   }
 
-  function updateWeekNumber(weekId, newNumber){
-    setWeeks(prev => prev.map(w => w.id === weekId ? { ...w, weekNumber: newNumber } : w));
+  const newWeek = {
+    id: Date.now(),
+    weekNumber: nextWeekNumber,
+    year: nextYear,
+    tasks: makeEmptyTasks()
+  };
+
+  if(prev){
+    const openDel = prev.tasks.filter(t => t.delegatedTasks.text.trim() && t.delegatedTasks.status !== 2);
+    const openObj = prev.tasks.filter(t => t.weeklyObjectives.text.trim() && t.weeklyObjectives.status !== 2);
+
+    openDel.forEach((t, idx) => {
+      if(idx < 16){
+        newWeek.tasks[idx].delegatedTasks = {
+          ...t.delegatedTasks,
+          ranking: idx + 1
+        };
+      }
+    });
+
+    openObj.forEach((t, idx) => {
+      if(idx < 16){
+        newWeek.tasks[idx].weeklyObjectives = {
+          ...t.weeklyObjectives,
+          ranking: idx + 1
+        };
+      }
+    });
   }
+
+  setWeeks([newWeek, ...weeks]);
+}
+
+  if(!draggedItem || draggedItem.weekId !== weekId){
+  setWeeks(prev => prev.map(w => {
+    if (w.id !== weekId) return w;
+    return {
+      ...w,
+      weekNumber: clampISOWeek(newNumber, w.year || currentYear)
+    };
+  }));
+}
 
   /* -----------------------------
      Drag highlight reset
@@ -440,48 +489,78 @@ useEffect(() => {
      - if target blank -> fill
      - if target filled -> shift down
 ------------------------------ */
-  function handleDrop(e, weekId, targetRow, targetCol){
-    e.preventDefault();
-    if(!draggedItem || draggedItem.weekId !== weekId){
-      setDraggedItem(null);
-      return;
-    }
+function handleDrop(e, targetWeekId, targetRow, targetCol){
+  e.preventDefault();
 
-    const isCopy = e.ctrlKey;
+  if(!draggedItem){
+    setDraggedItem(null);
+    return;
+  }
 
-    setWeeks(prev => prev.map(w => {
-      if(w.id !== weekId) return w;
-      let tasks = [...w.tasks];
+  const isCopy = e.ctrlKey;
 
-      const srcCol = draggedItem.col;
-      const srcRow = draggedItem.rowIndex;
-
-      const dragged = tasks[srcRow][srcCol];
-      if(isBlankCell(dragged)) return w;
-
-      if(!isCopy){
-        tasks[srcRow] = { ...tasks[srcRow], [srcCol]: makeEmptyCell(srcRow+1) };
-      }
-
-      const targetCell = tasks[targetRow][targetCol];
-
-      if(isBlankCell(targetCell)){
-        tasks[targetRow] = { ...tasks[targetRow], [targetCol]: { ...dragged, ranking: targetRow+1 } };
-      } else {
-        for(let i = tasks.length - 1; i > targetRow; i--){
-          tasks[i] = { ...tasks[i], [targetCol]: { ...tasks[i-1][targetCol], ranking: i+1 } };
-        }
-        tasks[targetRow] = { ...tasks[targetRow], [targetCol]: { ...dragged, ranking: targetRow+1 } };
-      }
-
-      tasks = sortColumnByCategory(tasks, targetCol);
-      if(!isCopy) tasks = sortColumnByCategory(tasks, srcCol);
-
-      return { ...w, tasks };
+  setWeeks(prev => {
+    const nextWeeks = prev.map(w => ({
+      ...w,
+      tasks: [...w.tasks]
     }));
 
-    setDraggedItem(null);
-  }
+    const sourceWeek = nextWeeks.find(w => w.id === draggedItem.weekId);
+    const targetWeek = nextWeeks.find(w => w.id === targetWeekId);
+
+    if(!sourceWeek || !targetWeek){
+      setDraggedItem(null);
+      return prev;
+    }
+
+    const srcCol = draggedItem.col;
+    const srcRow = draggedItem.rowIndex;
+
+    const dragged = sourceWeek.tasks[srcRow][srcCol];
+    if(isBlankCell(dragged)){
+      setDraggedItem(null);
+      return prev;
+    }
+
+    if(!isCopy){
+      sourceWeek.tasks[srcRow] = {
+        ...sourceWeek.tasks[srcRow],
+        [srcCol]: makeEmptyCell(srcRow + 1)
+      };
+    }
+
+    const targetCell = targetWeek.tasks[targetRow][targetCol];
+
+    if(isBlankCell(targetCell)){
+      targetWeek.tasks[targetRow] = {
+        ...targetWeek.tasks[targetRow],
+        [targetCol]: { ...dragged, ranking: targetRow + 1 }
+      };
+    } else {
+      for(let i = targetWeek.tasks.length - 1; i > targetRow; i--){
+        targetWeek.tasks[i] = {
+          ...targetWeek.tasks[i],
+          [targetCol]: { ...targetWeek.tasks[i - 1][targetCol], ranking: i + 1 }
+        };
+      }
+
+      targetWeek.tasks[targetRow] = {
+        ...targetWeek.tasks[targetRow],
+        [targetCol]: { ...dragged, ranking: targetRow + 1 }
+      };
+    }
+
+    targetWeek.tasks = sortColumnByCategory([...targetWeek.tasks], targetCol);
+
+    if(!isCopy){
+      sourceWeek.tasks = sortColumnByCategory([...sourceWeek.tasks], srcCol);
+    }
+
+    return nextWeeks;
+  });
+
+  setDraggedItem(null);
+}
 
   /* -----------------------------
      Keyboard nav + Enter sorting
@@ -593,54 +672,67 @@ useEffect(() => {
   /* -----------------------------
      Analytics datasets
 ------------------------------ */
-  const analyticsByWeek = useMemo(() => {
-    const sorted = [...weeks].slice().reverse(); // oldest -> newest
-    return sorted.map(w => {
-      const bucket = {};
-      let total = 0, done = 0;
+const analyticsByWeek = useMemo(() => {
+  const sorted = [...weeks].slice().reverse(); // oldest -> newest
 
-      w.tasks.forEach(r => {
-        dayColsForAnalytics.forEach(c => {
-          const cell = r[c];
-          if(!cell?.text?.trim()) return;
+  return sorted.map(w => {
+    const bucket = {};
+    let total = 0, done = 0, started = 0;
 
-          const cat = extractCategory(cell.text);
-          if(!bucket[cat]) bucket[cat] = { total:0, done:0, open:0 };
+    w.tasks.forEach(r => {
+      dayColsForAnalytics.forEach(c => {
+        const cell = r[c];
+        if(!cell?.text?.trim()) return;
 
-          bucket[cat].total += 1;
-          total += 1;
+        const cat = extractCategory(cell.text);
+        if(!bucket[cat]) bucket[cat] = { total:0, done:0, open:0, started:0 };
 
-          if(cell.status === 2){
-            bucket[cat].done += 1;
-            done += 1;
-          } else {
-            bucket[cat].open += 1;
-          }
-        });
+        bucket[cat].total += 1;
+        total += 1;
+
+        if(cell.status === 2){
+          bucket[cat].done += 1;
+          bucket[cat].started += 1;
+          done += 1;
+          started += 1;
+        } else if (cell.status === 1){
+          bucket[cat].started += 1;
+          bucket[cat].open += 1;
+          started += 1;
+        } else {
+          bucket[cat].open += 1;
+        }
       });
-
-      const completionPct = total ? (done / total) * 100 : 0;
-
-      return {
-        id: w.id,
-        label: `W${w.weekNumber}`,
-        weekNumber: w.weekNumber,
-        year: w.year,
-        bucket,
-        total,
-        done,
-        open: total - done,
-        completionPct
-      };
     });
-  }, [weeks]);
 
-  useEffect(() => {
-    if(analyticsByWeek.length){
-      setRangeFrom(0);
-      setRangeTo(analyticsByWeek.length - 1);
-    }
-  }, [analyticsByWeek.length]);
+    const completionPct = total ? (done / total) * 100 : 0;
+    const startedPct = total ? (started / total) * 100 : 0;
+
+    return {
+      id: w.id,
+      label: `W${w.weekNumber}`,
+      weekNumber: w.weekNumber,
+      year: w.year,
+      bucket,
+      total,
+      done,
+      started,
+      open: total - done,
+      completionPct,
+      startedPct
+    };
+  });
+}, [weeks]);
+
+ useEffect(() => {
+  if(analyticsRows.length){
+    setRangeFrom(0);
+    setRangeTo(analyticsRows.length - 1);
+  } else {
+    setRangeFrom(0);
+    setRangeTo(0);
+  }
+}, [analyticsRows.length, analyticsPeriod]);
 
   function computeTopCatsAcrossWeeks(rows, topN){
     const totals = {};
@@ -652,128 +744,141 @@ useEffect(() => {
     return Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0, topN).map(([k])=>k);
   }
 
-  function stackValuesForWeek(row, topCats, mode){
-    const baseTotal =
-      mode === 'all' ? row.total :
-      mode === 'done' ? row.done :
-      row.open;
+function stackValuesForWeek(row, topCats, mode){
+  const baseTotal =
+    mode === 'all' ? row.total :
+    mode === 'done' ? row.done :
+    mode === 'started' ? row.started :
+    row.open;
 
-    if(!baseTotal) return { parts: topCats.map(()=>0).concat([0]) };
+  if(!baseTotal) return { parts: topCats.map(()=>0).concat([0]) };
 
-    let used = 0;
-    const parts = topCats.map(cat => {
-      const v = row.bucket[cat];
-      let cnt = 0;
-      if(v){
-        cnt = mode === 'all' ? v.total : (mode === 'done' ? v.done : v.open);
-      }
-      used += cnt;
-      return (cnt / baseTotal) * 100;
-    });
+  let used = 0;
+  const parts = topCats.map(cat => {
+    const v = row.bucket[cat];
+    let cnt = 0;
 
-    const othersCnt = Math.max(0, baseTotal - used);
-    parts.push((othersCnt / baseTotal) * 100);
-    return { parts };
-  }
+    if(v){
+      cnt =
+        mode === 'all' ? v.total :
+        mode === 'done' ? v.done :
+        mode === 'started' ? v.started :
+        v.open;
+    }
 
-  const mainChartData = useMemo(() => {
-    const top5 = computeTopCatsAcrossWeeks(analyticsByWeek, 5);
-    const labels = analyticsByWeek.map(r => r.label);
+    used += cnt;
+    return (cnt / baseTotal) * 100;
+  });
 
-    const barDatasets = [...top5, "Others"].map((cat, idx) => ({
-      type: 'bar',
-      label: cat,
-      data: analyticsByWeek.map(r => {
-        const { parts } = stackValuesForWeek(r, top5, stackMode);
-        return parts[idx] ?? 0;
-      }),
-      yAxisID: 'y',
-      stack: 'stack1'
-    }));
+  const othersCnt = Math.max(0, baseTotal - used);
+  parts.push((othersCnt / baseTotal) * 100);
+  return { parts };
+}
 
-    const lineDataset = {
-      type: 'line',
-      label: 'Completion %',
-      data: analyticsByWeek.map(r => r.completionPct),
-      yAxisID: 'y1',
-      tension: 0.25,
-      pointRadius: 3
-    };
+const mainChartData = useMemo(() => {
+  const top5 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 5);
+  const labels = analyticsFilteredRows.map(r => r.label);
 
-    return { labels, barDatasets, lineDataset };
-  }, [analyticsByWeek, stackMode]);
+  const barDatasets = [...top5, "Others"].map((cat, idx) => ({
+    type: 'bar',
+    label: cat,
+    data: analyticsFilteredRows.map(r => {
+      const { parts } = stackValuesForWeek(r, top5, stackMode);
+      return parts[idx] ?? 0;
+    }),
+    yAxisID: 'y',
+    stack: 'stack1'
+  }));
+
+  const completionLineDataset = {
+    type: 'line',
+    label: 'Completion %',
+    data: analyticsFilteredRows.map(r => r.completionPct),
+    yAxisID: 'y1',
+    tension: 0.25,
+    pointRadius: 3
+  };
+
+  const startedLineDataset = {
+    type: 'line',
+    label: 'Started %',
+    data: analyticsFilteredRows.map(r => r.startedPct),
+    yAxisID: 'y1',
+    tension: 0.25,
+    pointRadius: 3
+  };
+
+  return { labels, barDatasets, completionLineDataset, startedLineDataset };
+}, [analyticsFilteredRows, stackMode]);
 
   /* MINI: one stacked column for the selected range */
-  const miniChartData = useMemo(() => {
-    if(!analyticsByWeek.length) return null;
+ const miniChartData = useMemo(() => {
+  if(!analyticsFilteredRows.length) return null;
 
-    const from = Math.min(rangeFrom, rangeTo);
-    const to = Math.max(rangeFrom, rangeTo);
-    const slice = analyticsByWeek.slice(from, to + 1);
+  const top10 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 10);
 
-    const top10 = computeTopCatsAcrossWeeks(slice, 10);
+  const totals = {};
+  let grand = 0;
 
-    const totals = {};
-    let grand = 0;
-    slice.forEach(r => {
-      Object.entries(r.bucket).forEach(([cat, v]) => {
-        totals[cat] = (totals[cat] || 0) + (v.total || 0);
-        grand += (v.total || 0);
-      });
+  analyticsFilteredRows.forEach(r => {
+    Object.entries(r.bucket).forEach(([cat, v]) => {
+      totals[cat] = (totals[cat] || 0) + (v.total || 0);
+      grand += (v.total || 0);
     });
+  });
 
-    const labels = [...top10, "Others"];
-    let used = 0;
-    const parts = top10.map(cat => {
-      const v = totals[cat] || 0;
-      used += v;
-      return grand ? (v / grand) * 100 : 0;
-    });
-    const others = Math.max(0, grand - used);
-    parts.push(grand ? (others / grand) * 100 : 0);
+  const labels = [...top10, "Others"];
+  let used = 0;
 
-    // Build stacked datasets (each category is one dataset stacked into a single bar)
-    const datasets = labels.map((lab, i) => ({
-      label: lab,
-      data: [parts[i] ?? 0],
-      stack: 'miniStack'
-    }));
+  const parts = top10.map(cat => {
+    const v = totals[cat] || 0;
+    used += v;
+    return grand ? (v / grand) * 100 : 0;
+  });
 
-    return { datasets };
-  }, [analyticsByWeek, rangeFrom, rangeTo]);
+  const others = Math.max(0, grand - used);
+  parts.push(grand ? (others / grand) * 100 : 0);
 
+  const datasets = labels.map((lab, i) => ({
+    label: lab,
+    data: [parts[i] ?? 0],
+    stack: 'miniStack'
+  }));
+
+  return { datasets };
+}, [analyticsFilteredRows]);
   /* TABLE: show "done - total" for each category (Top10 + Others) */
   const analyticsTable = useMemo(() => {
-    const top10 = computeTopCatsAcrossWeeks(analyticsByWeek, 10);
-    const cols = [...top10, "Others"];
+  const top10 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 10);
+  const cols = [...top10, "Others"];
 
-    const rows = analyticsByWeek.map(r => {
-      const known = new Set(top10);
-      let othersOpen = 0, othersDone = 0;
+  const rows = analyticsFilteredRows.map(r => {
+    const known = new Set(top10);
+    let othersOpen = 0, othersDone = 0;
 
-      const out = { week: r.label };
+    const out = { period: r.label };
 
-      cols.forEach(cat => {
-        if(cat === "Others") return;
-        const v = r.bucket[cat];
-        const done = v ? v.done : 0;
-        const open = v ? v.open : 0;
-        const total = done + open;
-        out[cat] = `${done} - ${total}`;
-      });
-
-      Object.entries(r.bucket).forEach(([cat, v]) => {
-        if(known.has(cat)) return;
-        othersOpen += v.open || 0;
-        othersDone += v.done || 0;
-      });
-
-      out["Others"] = `${othersDone} - ${othersDone + othersOpen}`;
-      return out;
+    cols.forEach(cat => {
+      if(cat === "Others") return;
+      const v = r.bucket[cat];
+      const done = v ? v.done : 0;
+      const open = v ? v.open : 0;
+      const total = done + open;
+      out[cat] = `${done} - ${total}`;
     });
 
-    return { cols, rows };
-  }, [analyticsByWeek]);
+    Object.entries(r.bucket).forEach(([cat, v]) => {
+      if(known.has(cat)) return;
+      othersOpen += v.open || 0;
+      othersDone += v.done || 0;
+    });
+
+    out["Others"] = `${othersDone} - ${othersDone + othersOpen}`;
+    return out;
+  });
+
+  return { cols, rows };
+}, [analyticsFilteredRows]);
 
   useEffect(() => {
     if(activeTab !== 'analytics') return;
@@ -786,16 +891,20 @@ useEffect(() => {
       }
       mainChartInstance.current = new Chart(ctx, {
         data: {
-          labels: mainChartData.labels,
-          datasets: [...mainChartData.barDatasets, mainChartData.lineDataset]
+  labels: mainChartData.labels,
+  datasets: [
+    ...mainChartData.barDatasets,
+    mainChartData.completionLineDataset,
+    mainChartData.startedLineDataset
+  ]
+},
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
             legend: { position: 'bottom' },
-            linePointLabels: { datasetIndex: mainChartData.barDatasets.length }
-          },
+linePointLabels: { datasetIndex: mainChartData.barDatasets.length + 1 }          },
           scales: {
             y: {
               stacked: true,
@@ -1116,24 +1225,48 @@ ref={el=>{
         {activeTab === 'analytics' && (
           <div className="p-3">
             <div className="flex flex-wrap items-center gap-2 mb-3">
-              <div className="text-sm text-gray-700 font-medium">Stacked bars mode:</div>
-              <button onClick={()=>setStackMode('all')}
-                className={`px-3 py-1 rounded text-sm ${stackMode==='all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-                All entries
-              </button>
-              <button onClick={()=>setStackMode('done')}
-                className={`px-3 py-1 rounded text-sm ${stackMode==='done' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-                Completed only
-              </button>
-              <button onClick={()=>setStackMode('open')}
-                className={`px-3 py-1 rounded text-sm ${stackMode==='open' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-                Uncompleted only
-              </button>
+  <div className="text-sm text-gray-700 font-medium">Period:</div>
 
-              <div className="ml-auto text-xs text-gray-500">
-                Analytics includes <b>Monday–Friday</b> only.
-              </div>
-            </div>
+  <button
+    onClick={()=>setAnalyticsPeriod('week')}
+    className={`px-3 py-1 rounded text-sm ${analyticsPeriod==='week' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}
+  >
+    Weeks
+  </button>
+
+  <button
+    onClick={()=>setAnalyticsPeriod('quarter')}
+    className={`px-3 py-1 rounded text-sm ${analyticsPeriod==='quarter' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}
+  >
+    Quarters
+  </button>
+
+  <div className="ml-4 text-sm text-gray-700 font-medium">Stacked bars mode:</div>
+
+  <button onClick={()=>setStackMode('all')}
+    className={`px-3 py-1 rounded text-sm ${stackMode==='all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+    All entries
+  </button>
+
+  <button onClick={()=>setStackMode('done')}
+    className={`px-3 py-1 rounded text-sm ${stackMode==='done' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+    Completed only
+  </button>
+
+  <button onClick={()=>setStackMode('started')}
+    className={`px-3 py-1 rounded text-sm ${stackMode==='started' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+    Started only
+  </button>
+
+  <button onClick={()=>setStackMode('open')}
+    className={`px-3 py-1 rounded text-sm ${stackMode==='open' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+    Uncompleted only
+  </button>
+
+  <div className="ml-auto text-xs text-gray-500">
+    Analytics includes <b>Monday–Friday</b> only.
+  </div>
+</div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
               <div className="bg-white border border-gray-200 rounded p-3 lg:col-span-2">
@@ -1148,12 +1281,23 @@ ref={el=>{
 
                 <div className="flex flex-col gap-2 mb-2">
                   <div className="text-xs text-gray-600">
-                    Weeks range: <b>{analyticsByWeek[Math.min(rangeFrom, rangeTo)]?.label || '-'}</b> → <b>{analyticsByWeek[Math.max(rangeFrom, rangeTo)]?.label || '-'}</b>
-                  </div>
-                  <input type="range" min="0" max={Math.max(0, analyticsByWeek.length-1)} value={rangeFrom}
-                    onChange={(e)=>setRangeFrom(parseInt(e.target.value,10))} />
-                  <input type="range" min="0" max={Math.max(0, analyticsByWeek.length-1)} value={rangeTo}
-                    onChange={(e)=>setRangeTo(parseInt(e.target.value,10))} />
+  Range: <b>{analyticsRows[Math.min(rangeFrom, rangeTo)]?.label || '-'}</b> → <b>{analyticsRows[Math.max(rangeFrom, rangeTo)]?.label || '-'}</b>
+</div>
+                  <input
+  type="range"
+  min="0"
+  max={Math.max(0, analyticsRows.length - 1)}
+  value={rangeFrom}
+  onChange={(e)=>setRangeFrom(parseInt(e.target.value,10))}
+/>
+
+<input
+  type="range"
+  min="0"
+  max={Math.max(0, analyticsRows.length - 1)}
+  value={rangeTo}
+  onChange={(e)=>setRangeTo(parseInt(e.target.value,10))}
+/>
                 </div>
 
                 <div style={{ height: 260 }}>
@@ -1172,8 +1316,9 @@ ref={el=>{
               <table className="w-full" style={{ borderCollapse:'collapse' }}>
                 <thead>
                   <tr className="bg-gray-700 text-white text-xs">
-                    <th className="p-2 text-left" style={{ position:'sticky', left:0, background:'#374151' }}>Week</th>
-                    {analyticsTable.cols.map(cat => (
+<th className="p-2 text-left" style={{ position:'sticky', left:0, background:'#374151' }}>
+  {analyticsPeriod === 'week' ? 'Week' : 'Quarter'}
+</th>                    {analyticsTable.cols.map(cat => (
                       <th key={cat} className="p-2 text-center">{cat}</th>
                     ))}
                   </tr>
@@ -1182,7 +1327,7 @@ ref={el=>{
                   {analyticsTable.rows.map((r, idx) => (
                     <tr key={idx} className="border-b border-gray-200 text-xs">
                       <td className="p-2 font-semibold" style={{ position:'sticky', left:0, background:'#fff' }}>
-                        {r.week}
+                        {r.period}
                       </td>
                       {analyticsTable.cols.map(cat => (
                         <td key={cat} className="p-2 text-center">{r[cat]}</td>
