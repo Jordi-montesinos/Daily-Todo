@@ -459,7 +459,7 @@ useEffect(() => {
   setWeeks([newWeek, ...weeks]);
 }
 
-  if(!draggedItem || draggedItem.weekId !== weekId){
+  function updateWeekNumber(weekId, newNumber){
   setWeeks(prev => prev.map(w => {
     if (w.id !== weekId) return w;
     return {
@@ -723,7 +723,53 @@ const analyticsByWeek = useMemo(() => {
     };
   });
 }, [weeks]);
+const analyticsRows = useMemo(() => {
+  if (analyticsPeriod === 'week') return analyticsByWeek;
 
+  const map = new Map();
+
+  analyticsByWeek.forEach(r => {
+    const quarter = Math.min(4, Math.ceil((r.weekNumber || 1) / 13));
+    const key = `${r.year}-Q${quarter}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        id: key,
+        label: `${r.year} Q${quarter}`,
+        weekNumber: r.weekNumber,
+        year: r.year,
+        bucket: {},
+        total: 0,
+        done: 0,
+        started: 0,
+        open: 0,
+        completionPct: 0,
+        startedPct: 0
+      });
+    }
+
+    const agg = map.get(key);
+
+    agg.total += r.total || 0;
+    agg.done += r.done || 0;
+    agg.started += r.started || 0;
+    agg.open += r.open || 0;
+
+    Object.entries(r.bucket).forEach(([cat, v]) => {
+      if (!agg.bucket[cat]) agg.bucket[cat] = { total:0, done:0, open:0, started:0 };
+      agg.bucket[cat].total += v.total || 0;
+      agg.bucket[cat].done += v.done || 0;
+      agg.bucket[cat].open += v.open || 0;
+      agg.bucket[cat].started += v.started || 0;
+    });
+  });
+
+  return Array.from(map.values()).map(r => ({
+    ...r,
+    completionPct: r.total ? (r.done / r.total) * 100 : 0,
+    startedPct: r.total ? (r.started / r.total) * 100 : 0
+  }));
+}, [analyticsByWeek, analyticsPeriod]);
  useEffect(() => {
   if(analyticsRows.length){
     setRangeFrom(0);
@@ -733,7 +779,12 @@ const analyticsByWeek = useMemo(() => {
     setRangeTo(0);
   }
 }, [analyticsRows.length, analyticsPeriod]);
-
+const analyticsFilteredRows = useMemo(() => {
+  if(!analyticsRows.length) return [];
+  const from = Math.min(rangeFrom, rangeTo);
+  const to = Math.max(rangeFrom, rangeTo);
+  return analyticsRows.slice(from, to + 1);
+}, [analyticsRows, rangeFrom, rangeTo]);
   function computeTopCatsAcrossWeeks(rows, topN){
     const totals = {};
     rows.forEach(r => {
@@ -891,13 +942,12 @@ const mainChartData = useMemo(() => {
       }
       mainChartInstance.current = new Chart(ctx, {
         data: {
-  labels: mainChartData.labels,
-  datasets: [
-    ...mainChartData.barDatasets,
-    mainChartData.completionLineDataset,
-    mainChartData.startedLineDataset
-  ]
-},
+          labels: mainChartData.labels,
+          datasets: [
+            ...mainChartData.barDatasets,
+            mainChartData.completionLineDataset,
+            mainChartData.startedLineDataset
+          ]
         },
         options: {
           responsive: true,
