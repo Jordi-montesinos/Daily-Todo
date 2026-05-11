@@ -872,11 +872,17 @@ const mainChartData = useMemo(() => {
   let grand = 0;
 
   analyticsFilteredRows.forEach(r => {
-    Object.entries(r.bucket).forEach(([cat, v]) => {
-      totals[cat] = (totals[cat] || 0) + (v.total || 0);
-      grand += (v.total || 0);
-    });
+  Object.entries(r.bucket).forEach(([cat, v]) => {
+    const value =
+      stackMode === 'all' ? (v.total || 0) :
+      stackMode === 'done' ? (v.done || 0) :
+      stackMode === 'started' ? (v.started || 0) :
+      (v.open || 0);
+
+    totals[cat] = (totals[cat] || 0) + value;
+    grand += value;
   });
+});
 
   const labels = [...top10, "Others"];
   let used = 0;
@@ -897,7 +903,7 @@ const mainChartData = useMemo(() => {
   }));
 
   return { datasets };
-}, [analyticsFilteredRows]);
+}, [analyticsFilteredRows, stackMode]);
   /* TABLE: show "done - total" for each category (Top10 + Others) */
   const analyticsTable = useMemo(() => {
   const top10 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 10);
@@ -940,21 +946,23 @@ const mainChartData = useMemo(() => {
         mainChartInstance.current.destroy();
         mainChartInstance.current = null;
       }
-      mainChartInstance.current = new Chart(ctx, {
-        data: {
-          labels: mainChartData.labels,
-          datasets: [
-            ...mainChartData.barDatasets,
-            mainChartData.completionLineDataset,
-            mainChartData.startedLineDataset
-          ]
-        },
-        options: {
+     mainChartInstance.current = new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: mainChartData.labels,
+    datasets: [
+      ...mainChartData.barDatasets,
+      mainChartData.completionLineDataset,
+      mainChartData.startedLineDataset
+    ]
+  },
+  options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'bottom' },
-linePointLabels: { datasetIndex: mainChartData.barDatasets.length + 1 }          },
+         plugins: {
+  legend: { position: 'bottom' },
+  linePointLabels: { datasetIndex: mainChartData.barDatasets.length + 1 }
+},
           scales: {
             y: {
               stacked: true,
@@ -1320,7 +1328,9 @@ ref={el=>{
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
               <div className="bg-white border border-gray-200 rounded p-3 lg:col-span-2">
-                <div className="text-sm font-semibold mb-2">Weekly trends</div>
+<div className="text-sm font-semibold mb-2">
+  {analyticsPeriod === 'week' ? 'Weekly trends' : 'Quarterly trends'}
+</div>
                 <div style={{ height: 320 }}>
                   <canvas ref={mainChartRef}></canvas>
                 </div>
@@ -1355,14 +1365,15 @@ ref={el=>{
                 </div>
 
                 <div className="text-xs text-gray-500 mt-2">
-                  Single stacked bar (Top 10 + Others) for selected weeks.
-                </div>
+  Single stacked bar (Top 10 + Others) for selected {analyticsPeriod === 'week' ? 'weeks' : 'quarters'}.
+</div>
               </div>
             </div>
 
             <div className="bg-white border border-gray-200 rounded p-3 mt-3 overflow-x-auto">
-              <div className="text-sm font-semibold mb-2">Weekly table (Top 10 + Others) — “done - total”</div>
-
+<div className="text-sm font-semibold mb-2">
+  {analyticsPeriod === 'week' ? 'Weekly table' : 'Quarterly table'} (Top 10 + Others) — “done - total”
+</div>
               <table className="w-full" style={{ borderCollapse:'collapse' }}>
                 <thead>
                   <tr className="bg-gray-700 text-white text-xs">
