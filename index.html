@@ -905,8 +905,8 @@ const mainChartData = useMemo(() => {
   return { datasets };
 }, [analyticsFilteredRows, stackMode]);
   /* TABLE: show "done - total" for each category (Top15 + Others) */
-  const analyticsTable = useMemo(() => {
-  const top15 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 10);
+const analyticsTable = useMemo(() => {
+  const top15 = computeTopCatsAcrossWeeks(analyticsRows, 15);
   const cols = [...top15, "Others"];
 
   const rows = analyticsFilteredRows.map(r => {
@@ -935,8 +935,8 @@ const mainChartData = useMemo(() => {
   });
 
   return { cols, rows };
-}, [analyticsFilteredRows]);
-
+}, [analyticsFilteredRows, analyticsRows]);
+  
   useEffect(() => {
     if(activeTab !== 'analytics') return;
 
