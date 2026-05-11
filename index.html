@@ -866,7 +866,7 @@ const mainChartData = useMemo(() => {
  const miniChartData = useMemo(() => {
   if(!analyticsFilteredRows.length) return null;
 
-  const top10 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 10);
+  const top15 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 15);
 
   const totals = {};
   let grand = 0;
@@ -884,10 +884,10 @@ const mainChartData = useMemo(() => {
   });
 });
 
-  const labels = [...top10, "Others"];
+  const labels = [...top15, "Others"];
   let used = 0;
 
-  const parts = top10.map(cat => {
+  const parts = top15.map(cat => {
     const v = totals[cat] || 0;
     used += v;
     return grand ? (v / grand) * 100 : 0;
@@ -904,13 +904,13 @@ const mainChartData = useMemo(() => {
 
   return { datasets };
 }, [analyticsFilteredRows, stackMode]);
-  /* TABLE: show "done - total" for each category (Top10 + Others) */
+  /* TABLE: show "done - total" for each category (Top15 + Others) */
   const analyticsTable = useMemo(() => {
-  const top10 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 10);
-  const cols = [...top10, "Others"];
+  const top15 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 10);
+  const cols = [...top15, "Others"];
 
   const rows = analyticsFilteredRows.map(r => {
-    const known = new Set(top10);
+    const known = new Set(top15);
     let othersOpen = 0, othersDone = 0;
 
     const out = { period: r.label };
