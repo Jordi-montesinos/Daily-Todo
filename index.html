@@ -938,9 +938,10 @@ const categoryContributionTable = useMemo(() => {
       nonCompletedCount: v.nonCompleted
     }))
     .sort((a,b) =>
-      (b.completedPct + b.startedNotCompletedPct + b.nonCompletedPct) -
-      (a.completedPct + a.startedNotCompletedPct + a.nonCompletedPct)
-    );
+  b.completedPct - a.completedPct ||
+  b.startedNotCompletedPct - a.startedNotCompletedPct ||
+  b.nonCompletedPct - a.nonCompletedPct
+);
 
   return {
     rows,
