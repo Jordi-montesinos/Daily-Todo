@@ -146,7 +146,14 @@ function nextStatus(s){
 function extractCategory(text){
   const t = (text || "").trim();
   const idx = t.indexOf(" - ");
-  if(idx > 0) return t.slice(0, idx).trim();
+
+  if(idx > 0){
+    const cat = t.slice(0, idx).trim().toLowerCase();
+
+    // normalize display: first letter uppercase
+    return cat.charAt(0).toUpperCase() + cat.slice(1);
+  }
+
   return "Uncategorized";
 }
 function extractMainTask(text){
