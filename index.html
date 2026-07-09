@@ -149,7 +149,12 @@ function extractCategory(text){
   if(idx > 0) return t.slice(0, idx).trim();
   return "Uncategorized";
 }
-
+function extractMainTask(text){
+  return (text || "")
+    .split("\n")[0]
+    .trim()
+    .toLowerCase();
+}
 /* -----------------------------
    Chart helper: integer % labels on line points
 ------------------------------ */
@@ -677,32 +682,60 @@ const analyticsByWeek = useMemo(() => {
 
   return sorted.map(w => {
     const bucket = {};
-    let total = 0, done = 0, started = 0;
+    const taskMap = new Map();
 
     w.tasks.forEach(r => {
       dayColsForAnalytics.forEach(c => {
         const cell = r[c];
         if(!cell?.text?.trim()) return;
 
+        const mainTask = extractMainTask(cell.text);
+        if(!mainTask) return;
+
         const cat = extractCategory(cell.text);
-        if(!bucket[cat]) bucket[cat] = { total:0, done:0, open:0, started:0 };
+        const key = `${cat}||${mainTask}`;
 
-        bucket[cat].total += 1;
-        total += 1;
+        if(!taskMap.has(key)){
+          taskMap.set(key, {
+            cat,
+            status: 0
+          });
+        }
 
+        const existing = taskMap.get(key);
+
+        // Highest status wins:
+        // done > started > open
         if(cell.status === 2){
-          bucket[cat].done += 1;
-          bucket[cat].started += 1;
-          done += 1;
-          started += 1;
-        } else if (cell.status === 1){
-          bucket[cat].started += 1;
-          bucket[cat].open += 1;
-          started += 1;
-        } else {
-          bucket[cat].open += 1;
+          existing.status = 2;
+        } else if(cell.status === 1 && existing.status !== 2){
+          existing.status = 1;
         }
       });
+    });
+
+    let total = 0, done = 0, started = 0;
+
+    taskMap.forEach(item => {
+      const cat = item.cat;
+
+      if(!bucket[cat]) bucket[cat] = { total:0, done:0, open:0, started:0 };
+
+      bucket[cat].total += 1;
+      total += 1;
+
+      if(item.status === 2){
+        bucket[cat].done += 1;
+        bucket[cat].started += 1;
+        done += 1;
+        started += 1;
+      } else if(item.status === 1){
+        bucket[cat].started += 1;
+        bucket[cat].open += 1;
+        started += 1;
+      } else {
+        bucket[cat].open += 1;
+      }
     });
 
     const completionPct = total ? (done / total) * 100 : 0;
@@ -723,7 +756,7 @@ const analyticsByWeek = useMemo(() => {
     };
   });
 }, [weeks]);
-const analyticsRows = useMemo(() => {
+  const analyticsRows = useMemo(() => {
   if (analyticsPeriod === 'week') return analyticsByWeek;
 
   const map = new Map();
