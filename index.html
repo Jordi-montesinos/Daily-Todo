@@ -860,14 +860,14 @@ function stackValuesForWeek(row, topCats, mode){
 }
 
 const mainChartData = useMemo(() => {
-  const top5 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 5);
+  const top10 = computeTopCatsAcrossWeeks(analyticsFilteredRows, 10);
   const labels = analyticsFilteredRows.map(r => r.label);
 
-  const barDatasets = [...top5, "Others"].map((cat, idx) => ({
+  const barDatasets = [...top10, "Others"].map((cat, idx) => ({
     type: 'bar',
     label: cat,
     data: analyticsFilteredRows.map(r => {
-      const { parts } = stackValuesForWeek(r, top5, stackMode);
+      const { parts } = stackValuesForWeek(r, top10, stackMode);
       return parts[idx] ?? 0;
     }),
     yAxisID: 'y',
